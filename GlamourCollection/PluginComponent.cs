@@ -20,7 +20,7 @@ namespace Main
         //基础
         public string Name => "GlamourCollection";
         //指令名
-        private const string _commonName = "/glamour";
+        private const string _commonName = "/dgc";
         //窗口事件
         private WindowSystem _windowSystem = new("GlamourCollection");
         //主UI
