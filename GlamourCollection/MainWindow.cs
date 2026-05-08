@@ -111,6 +111,8 @@ namespace Main
 
             if (ImGui.BeginTabItem(Lang.About))
             {
+                ImGui.Text("当前为早期测试版本，开发中");
+
                 if (ImGui.Button(Lang.SendIssue))
                 {
                     var url = "https://discord.gg/GWMEY9P9BX";

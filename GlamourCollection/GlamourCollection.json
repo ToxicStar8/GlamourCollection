@@ -1,8 +1,8 @@
 {
     "Author": "ToxicStar",
     "Name": "GlamourCollection",
-    "Punchline": "幻化手册，喜欢吗？",
-    "Description": "幻化手册，喜欢吗？",
+    "Punchline": "仿制幻化手册，用于追踪当前角色缺少的幻化装备。",
+    "Description": "仿制幻化手册，用于追踪当前角色缺少的幻化装备。",
     "InternalName": "GlamourCollection",
     "ApplicableVersion": "any",
     "Tags": [
