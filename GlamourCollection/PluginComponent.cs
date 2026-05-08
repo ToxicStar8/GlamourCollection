@@ -30,6 +30,7 @@ namespace Main
         public ItemDatabaseService ItemDatabase { get; private set; } = null!;
         public OwnedItemRepository OwnedItems { get; private set; } = null!;
         public InventoryScanner InventoryScanner { get; private set; } = null!;
+        public InventoryWatcher InventoryWatcher { get; private set; } = null!;
         public OwnershipService Ownership { get; private set; } = null!;
         public ITryOnService TryOn { get; private set; } = null!;
         public DateTimeOffset? LastInventoryScanAt { get; private set; }

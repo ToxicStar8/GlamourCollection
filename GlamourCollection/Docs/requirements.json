@@ -11,11 +11,11 @@
     "tracksPreviouslyObtainedItems": false,
     "groupsSharedAppearances": false,
     "comparesAppearanceModelIds": false,
-    "ownershipKey": "ItemId",
-    "ownedDefinition": "An equippable item is owned only while at least one matching ItemId exists in an accessible scanned inventory."
+    "ownershipKey": "Configurable: BaseItemId by default, Raw ItemId for exact matching.",
+    "ownedDefinition": "An equippable item is owned only while at least one matching configured item id exists in an accessible scanned inventory."
   },
   "phase1": {
-    "status": "in-progress",
+    "status": "done",
     "inventorySources": [
       "Inventory",
       "EquippedItems",
@@ -39,8 +39,33 @@
       "Inventory change event watching"
     ]
   },
+  "phase2": {
+    "status": "done",
+    "features": [
+      "Subscribe to Dalamud IGameInventory.InventoryChangedRaw.",
+      "Detect changes involving inventory, equipped items, or armoury chest containers.",
+      "Debounce raw inventory events for a few framework frames.",
+      "Refresh the phase-one inventory snapshot after inventory changes.",
+      "Keep the manual Rescan button as the consistency fallback."
+    ],
+    "strategy": "Raw events schedule a phase-one full snapshot refresh instead of applying fragile per-event mutations.",
+    "specialContainerNote": "If an item is moved from inventory into the glamour dresser or armoire, phase two only observes the source inventory removal. Until glamour dresser and armoire scanners are implemented, that ItemId will be considered unowned unless another copy still exists in inventory, equipped items, or the armoury chest."
+  },
+  "ownershipOptions": {
+    "idMatchingModes": [
+      "BaseItemId: default; HQ and collectable offsets are ignored for ownership.",
+      "Raw ItemId: exact inventory ItemId is used for ownership matching."
+    ],
+    "locationModes": [
+      "First location only",
+      "All locations"
+    ]
+  },
+  "uiPerformance": {
+    "listRendering": "Uses ImGuiListClipper to virtualize the list and draw only visible rows.",
+    "searchFiltering": "Filtered results are cached until the search text or ownership version changes."
+  },
   "futureModules": [
-    "InventoryWatcher",
     "SourceInfoService",
     "TryOnService",
     "GridView",

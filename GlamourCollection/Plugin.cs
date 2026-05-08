@@ -40,8 +40,9 @@ namespace Main
             Configuration.Init();
             ItemDatabase = new ItemDatabaseService();
             OwnedItems = new OwnedItemRepository();
-            InventoryScanner = new InventoryScanner(ItemDatabase);
-            Ownership = new OwnershipService(ItemDatabase, OwnedItems);
+            InventoryScanner = new InventoryScanner(ItemDatabase, Configuration);
+            InventoryWatcher = new InventoryWatcher();
+            Ownership = new OwnershipService(ItemDatabase, OwnedItems, Configuration);
             TryOn = new TryOnService();
             Ownership.Refresh();
             //窗口类
@@ -97,9 +98,10 @@ namespace Main
         {
             scanWhenCharacterReady = false;
             loadedCharacterId = 0;
+            InventoryWatcher.ClearPending();
             OwnedItems.Clear();
             Ownership.Refresh();
-            LastInventoryScanStatus = "Waiting for character login.";
+            LastInventoryScanStatus = "等待角色登录。";
             LastInventoryScanAt = null;
         }
 
@@ -120,18 +122,23 @@ namespace Main
                 scanWhenCharacterReady = true;
             }
 
-            if (!scanWhenCharacterReady)
+            if (scanWhenCharacterReady)
+            {
+                RescanOwnedItems("登录扫描。");
+                scanWhenCharacterReady = false;
+                InventoryWatcher.ClearPending();
                 return;
+            }
 
-            RescanOwnedItems();
-            scanWhenCharacterReady = false;
+            if (InventoryWatcher.ConsumeRescanRequest())
+                RescanOwnedItems(InventoryWatcher.LastChangeReason);
         }
 
-        public void RescanOwnedItems()
+        public void RescanOwnedItems(string reason = "手动扫描。")
         {
             if (!Svc.ClientState.IsLoggedIn || Svc.ClientState.LocalContentId == 0)
             {
-                LastInventoryScanStatus = "Log in to scan inventory.";
+                LastInventoryScanStatus = "请先登录角色再扫描库存。";
                 LastInventoryScanAt = null;
                 return;
             }
@@ -150,7 +157,7 @@ namespace Main
             Ownership.Refresh();
 
             LastInventoryScanAt = DateTimeOffset.Now;
-            LastInventoryScanStatus = $"Scanned {snapshot.Count} owned equipment locations.";
+            LastInventoryScanStatus = $"{reason} 已扫描 {snapshot.Count} 个装备位置。";
         }
         #endregion
 
@@ -171,6 +178,7 @@ namespace Main
             Svc.ClientState.Login -= OnLogin;
             Svc.ClientState.Logout -= OnLogout;
             Svc.Framework.Update -= OnFrameworkUpdate;
+            InventoryWatcher.Dispose();
             //
             ECommonsMain.Dispose();
         }

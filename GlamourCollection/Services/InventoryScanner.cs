@@ -3,10 +3,11 @@ using ECommons.DalamudServices;
 using Main.Models;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace Main.Services;
 
-public sealed class InventoryScanner(ItemDatabaseService itemDatabase)
+public sealed class InventoryScanner(ItemDatabaseService itemDatabase, Configuration configuration)
 {
     private static readonly GameInventoryType[] PhaseOneContainers =
     [
@@ -28,6 +29,11 @@ public sealed class InventoryScanner(ItemDatabaseService itemDatabase)
         GameInventoryType.ArmoryRings,
     ];
 
+    private static readonly HashSet<GameInventoryType> PhaseOneContainerSet = PhaseOneContainers.ToHashSet();
+
+    public static bool IsPhaseOneContainer(GameInventoryType type)
+        => PhaseOneContainerSet.Contains(type);
+
     public IReadOnlyList<OwnedItemRecord> ScanPhaseOne(ulong characterId, uint worldId)
     {
         var now = DateTimeOffset.UtcNow;
@@ -42,13 +48,16 @@ public sealed class InventoryScanner(ItemDatabaseService itemDatabase)
                 if (inventoryItem.IsEmpty)
                     continue;
 
-                var itemId = inventoryItem.BaseItemId;
-                if (!itemDatabase.TryGetEquipment(itemId, out var equipment))
+                var rawItemId = inventoryItem.ItemId;
+                var baseItemId = inventoryItem.BaseItemId;
+                if (!itemDatabase.TryGetEquipment(baseItemId, out var equipment))
                     continue;
 
                 records.Add(new OwnedItemRecord
                 {
-                    ItemId = itemId,
+                    RawItemId = rawItemId,
+                    BaseItemId = baseItemId,
+                    ItemId = GetConfiguredItemId(rawItemId, baseItemId),
                     ItemName = equipment.Name,
                     Quantity = inventoryItem.Quantity,
                     IsHq = inventoryItem.IsHq,
@@ -65,6 +74,13 @@ public sealed class InventoryScanner(ItemDatabaseService itemDatabase)
 
         return records;
     }
+
+    private uint GetConfiguredItemId(uint rawItemId, uint baseItemId)
+        => (OwnershipMatchMode)configuration.OwnershipMatchMode switch
+        {
+            OwnershipMatchMode.RawItemId => rawItemId,
+            _ => baseItemId,
+        };
 
     private static string GetContainerLabel(GameInventoryType type)
         => type switch

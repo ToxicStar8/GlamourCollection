@@ -1,6 +1,7 @@
 using Dalamud.Configuration;
 using Dalamud.Plugin;
 using ECommons.DalamudServices;
+using Main.Models;
 using System;
 using System.Collections.Generic;
 
@@ -17,6 +18,8 @@ namespace Main
         public bool IsEscCloseWindow { get; set; } = true;
         //语言类型 zh=0 todo:待实现
         public int LangIndex { get; set; } = 0;
+        public int OwnershipMatchMode { get; set; } = (int)Main.Models.OwnershipMatchMode.BaseItemId;
+        public int OwnedLocationMode { get; set; } = (int)Main.Models.OwnedLocationMode.AllLocations;
 
         public void Init()
         {

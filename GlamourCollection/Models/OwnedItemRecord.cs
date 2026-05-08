@@ -4,6 +4,10 @@ namespace Main.Models;
 
 public sealed class OwnedItemRecord
 {
+    public uint RawItemId { get; set; }
+
+    public uint BaseItemId { get; set; }
+
     public uint ItemId { get; set; }
 
     public string ItemName { get; set; } = string.Empty;
