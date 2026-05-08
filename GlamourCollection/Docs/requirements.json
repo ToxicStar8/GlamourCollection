@@ -12,8 +12,8 @@
     "groupsSharedAppearancesByDefault": false,
     "supportsOptionalModelGrouping": true,
     "comparesAppearanceModelIds": "optional display mode only; first implementation uses ItemUICategory + EquipSlotCategory + ModelMain + ModelSub.",
-    "ownershipKey": "Configurable: BaseItemId by default, Raw ItemId for exact matching.",
-    "ownedDefinition": "An equippable item is owned only while at least one matching configured item id exists in an accessible scanned inventory."
+    "ownershipKey": "BaseItemId. Raw ItemId is retained only to display owned NQ/HQ quality details.",
+    "ownedDefinition": "An equippable item is owned while at least one matching BaseItemId exists in an accessible scanned inventory."
   },
   "phase1": {
     "status": "done",
@@ -25,7 +25,7 @@
     "features": [
       "Scan player inventory and armoury chest.",
       "Build an equippable item database from Lumina Item rows.",
-      "Compare equipment ItemId with owned inventory ItemId.",
+      "Compare equipment BaseItemId with owned inventory BaseItemId.",
       "Persist owned item records as local JSON.",
       "Show a basic list view with icon, item name, and owned check mark."
     ],
@@ -52,19 +52,27 @@
     "strategy": "Raw events schedule a phase-one full snapshot refresh instead of applying fragile per-event mutations.",
     "specialContainerNote": "If an item is moved from inventory into the glamour dresser or armoire, phase two only observes the source inventory removal. Until glamour dresser and armoire scanners are implemented, that ItemId will be considered unowned unless another copy still exists in inventory, equipped items, or the armoury chest."
   },
+  "phase6": {
+    "status": "in-progress",
+    "features": [
+      "Add SourceInfoService as the single source lookup abstraction.",
+      "Show source information in the list and item tooltip. First implementation returns Unknown until source parsers are added.",
+      "Show same-model item details in the item tooltip, including owned NQ/HQ state per item.",
+      "Add filters for ownership, NQ/HQ quality, same-model groups, and dyeability.",
+      "Add sorting by name, ownership, same-model count, equip level, item level, and source."
+    ]
+  },
   "ownershipOptions": {
     "displayModes": [
       "By item: default; each ItemId is shown as its own row.",
       "By appearance model: optional; items with the same ItemUICategory, equip slot, ModelMain, and ModelSub are merged into one visible row."
     ],
-    "idMatchingModes": [
-      "BaseItemId: default; HQ and collectable offsets are ignored for ownership.",
-      "Raw ItemId: exact inventory ItemId is used for ownership matching."
-    ],
+    "qualityDisplay": "Owned rows display whether current inventory contains NQ, HQ, or both variants.",
     "locationModes": [
       "First location only",
       "All locations"
-    ]
+    ],
+    "locationDisplayNote": "The old top-level location display option is hidden until a dedicated detail panel exists; current item tooltips show all owned locations."
   },
   "uiPerformance": {
     "listRendering": "Uses ImGuiListClipper to virtualize the list and draw only visible rows.",

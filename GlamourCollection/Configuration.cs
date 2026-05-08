@@ -19,8 +19,13 @@ namespace Main
         //语言类型 zh=0 todo:待实现
         public int LangIndex { get; set; } = 0;
         public int EquipmentDisplayMode { get; set; } = (int)Main.Models.EquipmentDisplayMode.ByItem;
-        public int OwnershipMatchMode { get; set; } = (int)Main.Models.OwnershipMatchMode.BaseItemId;
         public int OwnedLocationMode { get; set; } = (int)Main.Models.OwnedLocationMode.AllLocations;
+        public int EquipmentOwnershipFilter { get; set; } = (int)Main.Models.EquipmentOwnershipFilter.All;
+        public int EquipmentQualityFilter { get; set; } = (int)Main.Models.EquipmentQualityFilter.All;
+        public int EquipmentSameModelFilter { get; set; } = (int)Main.Models.EquipmentSameModelFilter.All;
+        public int EquipmentDyeFilter { get; set; } = (int)Main.Models.EquipmentDyeFilter.All;
+        public int EquipmentSortMode { get; set; } = (int)Main.Models.EquipmentSortMode.Name;
+        public bool EquipmentSortDescending { get; set; } = false;
 
         public void Init()
         {

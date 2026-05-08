@@ -27,6 +27,7 @@ namespace Main
         private MainWindow _mainWindow { get; init; }
         //配置
         public Configuration Configuration { get; init; }
+        public SourceInfoService SourceInfo { get; private set; } = null!;
         public ItemDatabaseService ItemDatabase { get; private set; } = null!;
         public OwnedItemRepository OwnedItems { get; private set; } = null!;
         public InventoryScanner InventoryScanner { get; private set; } = null!;

@@ -8,7 +8,7 @@ using System.Linq;
 
 namespace Main.Services;
 
-public sealed class ItemDatabaseService
+public sealed class ItemDatabaseService(SourceInfoService sourceInfo)
 {
     private readonly List<EquipmentRecord> equipment = [];
     private readonly Dictionary<uint, EquipmentRecord> equipmentById = [];
@@ -39,6 +39,12 @@ public sealed class ItemDatabaseService
                 item.RowId,
                 name,
                 item.Icon,
+                item.ItemUICategory.Value.Name.ExtractText(),
+                item.ClassJobCategory.Value.Name.ExtractText(),
+                item.LevelEquip,
+                item.LevelItem.RowId,
+                item.DyeCount > 0,
+                sourceInfo.GetSourceInfo(item),
                 item.ItemUICategory.RowId,
                 item.EquipSlotCategory.RowId,
                 item.ModelMain,

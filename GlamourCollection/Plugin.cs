@@ -38,9 +38,10 @@ namespace Main
             //new配置出来
             Configuration = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
             Configuration.Init();
-            ItemDatabase = new ItemDatabaseService();
+            SourceInfo = new SourceInfoService();
+            ItemDatabase = new ItemDatabaseService(SourceInfo);
             OwnedItems = new OwnedItemRepository();
-            InventoryScanner = new InventoryScanner(ItemDatabase, Configuration);
+            InventoryScanner = new InventoryScanner(ItemDatabase);
             InventoryWatcher = new InventoryWatcher();
             Ownership = new OwnershipService(ItemDatabase, OwnedItems, Configuration);
             TryOn = new TryOnService();

@@ -7,7 +7,7 @@ using System.Linq;
 
 namespace Main.Services;
 
-public sealed class InventoryScanner(ItemDatabaseService itemDatabase, Configuration configuration)
+public sealed class InventoryScanner(ItemDatabaseService itemDatabase)
 {
     private static readonly GameInventoryType[] PhaseOneContainers =
     [
@@ -57,7 +57,7 @@ public sealed class InventoryScanner(ItemDatabaseService itemDatabase, Configura
                 {
                     RawItemId = rawItemId,
                     BaseItemId = baseItemId,
-                    ItemId = GetConfiguredItemId(rawItemId, baseItemId),
+                    ItemId = baseItemId,
                     ItemName = equipment.Name,
                     Quantity = inventoryItem.Quantity,
                     IsHq = inventoryItem.IsHq,
@@ -74,13 +74,6 @@ public sealed class InventoryScanner(ItemDatabaseService itemDatabase, Configura
 
         return records;
     }
-
-    private uint GetConfiguredItemId(uint rawItemId, uint baseItemId)
-        => (OwnershipMatchMode)configuration.OwnershipMatchMode switch
-        {
-            OwnershipMatchMode.RawItemId => rawItemId,
-            _ => baseItemId,
-        };
 
     private static string GetContainerLabel(GameInventoryType type)
         => type switch
