@@ -1,0 +1,76 @@
+using Dalamud.Game.Gui.Dtr;
+using Dalamud.Hooking;
+using Dalamud.Interface.Windowing;
+using Dalamud.IoC;
+using Dalamud.Plugin;
+using Dalamud.Utility;
+using ECommons.DalamudServices;
+using FFXIVClientStructs.FFXIV.Client.UI.Info;
+using Lumina.Excel.Sheets;
+using System;
+using System.Collections.Generic;
+using World = Lumina.Excel.Sheets.World;
+
+namespace Main
+{
+    public unsafe partial class Plugin
+    {
+        [PluginService] public IDalamudPluginInterface PluginInterface { get; private set; } = null!;
+        //基础
+        public string Name => "BlockAnyRace";
+        //指令名
+        private const string _commonName = "/bar";
+        //窗口事件
+        private WindowSystem _windowSystem = new("BlockAnyRace");
+        //主UI
+        private MainWindow _mainWindow { get; init; }
+        //配置
+        public Configuration Configuration { get; init; }
+        //自己
+        public static Plugin Instance;
+        //信息栏
+        private IDtrBarEntry _dtrEntry;
+        //黑名单更新
+        private HashSet<ulong> _blackHashSet { get; set; }
+        private readonly string InfoProxyBlackListUpdateSig = "E8 ?? ?? ?? ?? 83 7C 24 ?? ?? 75 ?? E8";
+        private delegate void InfoProxyBlackListUpdateDelegate(InfoProxyBlacklist.BlockResult* outBlockResult, ulong accountId, ulong contentId);
+        private Hook<InfoProxyBlackListUpdateDelegate>? InfoProxyBlackListUpdateHook;
+
+        //服务器列表
+        private Dictionary<uint, World> _worlds;
+        /// <summary>
+        /// 服务器列表
+        /// </summary>
+        public Dictionary<uint, World>  Worlds
+        {
+            get
+            {
+                if (_worlds == null)
+                {
+                    _worlds = new();
+
+                    var list = Svc.Data.GetExcelSheet<World>();
+                    foreach (var item in list)
+                    {
+                        var name = item.Name.ToString();
+                        if (name.IsNullOrWhitespace())
+                            continue;
+                        Svc.Log.Debug("已添加区服=" + item.Name.ToString());
+                        _worlds[item.RowId] = item;
+                    }
+                }
+                return _worlds;
+            }
+        }
+
+        private readonly HashSet<uint> TerritoryTypeWhitelist = [];
+
+        //Update限制
+        private DateTime _lastUpdateTime;
+
+        //最后检测到的屏蔽玩家人数
+        private int _lastBlockNum;
+        //是否曾经隐藏过玩家，用于无规则时跳过扫描
+        private bool _hasHiddenPlayers;
+    }
+}
