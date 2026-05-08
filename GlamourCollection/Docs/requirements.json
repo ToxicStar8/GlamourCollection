@@ -9,8 +9,9 @@
   "scope": {
     "tracksPermanentUnlocks": false,
     "tracksPreviouslyObtainedItems": false,
-    "groupsSharedAppearances": false,
-    "comparesAppearanceModelIds": false,
+    "groupsSharedAppearancesByDefault": false,
+    "supportsOptionalModelGrouping": true,
+    "comparesAppearanceModelIds": "optional display mode only; first implementation uses ItemUICategory + EquipSlotCategory + ModelMain + ModelSub.",
     "ownershipKey": "Configurable: BaseItemId by default, Raw ItemId for exact matching.",
     "ownedDefinition": "An equippable item is owned only while at least one matching configured item id exists in an accessible scanned inventory."
   },
@@ -52,6 +53,10 @@
     "specialContainerNote": "If an item is moved from inventory into the glamour dresser or armoire, phase two only observes the source inventory removal. Until glamour dresser and armoire scanners are implemented, that ItemId will be considered unowned unless another copy still exists in inventory, equipped items, or the armoury chest."
   },
   "ownershipOptions": {
+    "displayModes": [
+      "By item: default; each ItemId is shown as its own row.",
+      "By appearance model: optional; items with the same ItemUICategory, equip slot, ModelMain, and ModelSub are merged into one visible row."
+    ],
     "idMatchingModes": [
       "BaseItemId: default; HQ and collectable offsets are ignored for ownership.",
       "Raw ItemId: exact inventory ItemId is used for ownership matching."

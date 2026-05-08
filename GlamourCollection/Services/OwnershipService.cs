@@ -18,6 +18,7 @@ public sealed class OwnershipService(ItemDatabaseService itemDatabase, OwnedItem
     {
         itemDatabase.Load();
 
+        var displayMode = (EquipmentDisplayMode)configuration.EquipmentDisplayMode;
         var locationMode = (OwnedLocationMode)configuration.OwnedLocationMode;
         var ownedByItemId = repository.Records
             .GroupBy(GetMatchItemId)
@@ -28,12 +29,54 @@ public sealed class OwnershipService(ItemDatabaseService itemDatabase, OwnedItem
                     : group.ToList()));
 
         this.viewModels.Clear();
-        this.viewModels.AddRange(itemDatabase.Equipment.Select(item =>
+
+        if (displayMode == EquipmentDisplayMode.ByAppearanceModel)
         {
-            ownedByItemId.TryGetValue(item.ItemId, out var locations);
-            return new EquipmentViewModel(item, locations is { Count: > 0 }, locations ?? []);
-        }));
+            this.viewModels.AddRange(itemDatabase.Equipment
+                .GroupBy(item => item.AppearanceKey)
+                .Select(group => CreateAppearanceViewModel(group.ToList(), ownedByItemId, locationMode))
+                .OrderBy(item => item.Item.Name));
+        }
+        else
+        {
+            this.viewModels.AddRange(itemDatabase.Equipment
+                .Select(item => CreateItemViewModel(item, ownedByItemId)));
+        }
+
         this.Version++;
+    }
+
+    private static EquipmentViewModel CreateItemViewModel(
+        EquipmentRecord item,
+        IReadOnlyDictionary<uint, IReadOnlyList<OwnedItemRecord>> ownedByItemId)
+    {
+        ownedByItemId.TryGetValue(item.ItemId, out var locations);
+        return new EquipmentViewModel(item, locations is { Count: > 0 }, locations ?? [], [item]);
+    }
+
+    private static EquipmentViewModel CreateAppearanceViewModel(
+        IReadOnlyList<EquipmentRecord> appearanceItems,
+        IReadOnlyDictionary<uint, IReadOnlyList<OwnedItemRecord>> ownedByItemId,
+        OwnedLocationMode locationMode)
+    {
+        var sortedItems = appearanceItems.OrderBy(item => item.Name).ToList();
+        var ownedItems = new List<EquipmentRecord>();
+        var ownedLocations = new List<OwnedItemRecord>();
+
+        foreach (var item in sortedItems)
+        {
+            if (!ownedByItemId.TryGetValue(item.ItemId, out var locations) || locations.Count == 0)
+                continue;
+
+            ownedItems.Add(item);
+            ownedLocations.AddRange(locations);
+        }
+
+        if (locationMode == OwnedLocationMode.FirstLocationOnly && ownedLocations.Count > 1)
+            ownedLocations = ownedLocations.Take(1).ToList();
+
+        var representative = ownedItems.Count > 0 ? ownedItems[0] : sortedItems[0];
+        return new EquipmentViewModel(representative, ownedLocations.Count > 0, ownedLocations, sortedItems);
     }
 
     private uint GetMatchItemId(OwnedItemRecord item)

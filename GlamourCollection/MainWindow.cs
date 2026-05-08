@@ -14,6 +14,12 @@ namespace Main
 {
     public unsafe class MainWindow : Window, IDisposable
     {
+        private static readonly string[] EquipmentDisplayModeLabels =
+        [
+            "逐件显示",
+            "同模型合并",
+        ];
+
         private static readonly string[] OwnershipMatchModeLabels =
         [
             "基础道具ID（HQ/NQ有一个即可）",
@@ -115,10 +121,20 @@ namespace Main
         private void DrawOwnershipOptions(Plugin plugin)
         {
             var config = plugin.Configuration;
+            var displayMode = Math.Clamp(config.EquipmentDisplayMode, 0, EquipmentDisplayModeLabels.Length - 1);
             var matchMode = Math.Clamp(config.OwnershipMatchMode, 0, OwnershipMatchModeLabels.Length - 1);
             var locationMode = Math.Clamp(config.OwnedLocationMode, 0, OwnedLocationModeLabels.Length - 1);
 
-            ImGui.SetNextItemWidth(220f);
+            ImGui.SetNextItemWidth(180f);
+            if (ImGui.Combo("显示模式", ref displayMode, EquipmentDisplayModeLabels, EquipmentDisplayModeLabels.Length))
+            {
+                config.EquipmentDisplayMode = displayMode;
+                config.Save();
+                plugin.Ownership.Refresh();
+                InvalidateFilterCache();
+            }
+
+            ImGui.SameLine();
             ImGui.SetNextItemWidth(260f);
             if (ImGui.Combo("拥有判定", ref matchMode, OwnershipMatchModeLabels, OwnershipMatchModeLabels.Length))
             {
@@ -156,7 +172,8 @@ namespace Main
             else
             {
                 this.filteredItems.AddRange(ownership.ViewModels.Where(
-                    item => item.Item.Name.Contains(this.searchText, StringComparison.CurrentCultureIgnoreCase)));
+                    item => item.AppearanceItems.Any(
+                        appearanceItem => appearanceItem.Name.Contains(this.searchText, StringComparison.CurrentCultureIgnoreCase))));
             }
 
             return this.filteredItems;
@@ -170,12 +187,13 @@ namespace Main
                              | ImGuiTableFlags.ScrollY
                              | ImGuiTableFlags.SizingStretchProp;
 
-            if (!ImGui.BeginTable("##equipmentList", 3, tableFlags, new Vector2(-1, -1)))
+            if (!ImGui.BeginTable("##equipmentList", 4, tableFlags, new Vector2(-1, -1)))
                 return;
 
             var iconSize = GetIconSize(rowHeight);
             ImGui.TableSetupColumn("图标", ImGuiTableColumnFlags.WidthFixed, iconSize + 10f);
             ImGui.TableSetupColumn("名称", ImGuiTableColumnFlags.WidthStretch);
+            ImGui.TableSetupColumn("同模数", ImGuiTableColumnFlags.WidthFixed, 70f);
             ImGui.TableSetupColumn("拥有状态", ImGuiTableColumnFlags.WidthFixed, 92f);
             ImGui.TableHeadersRow();
 
@@ -202,6 +220,13 @@ namespace Main
             ImGui.TextUnformatted(item.Item.Name);
 
             ImGui.TableSetColumnIndex(2);
+            ImGui.AlignTextToFramePadding();
+            if (item.AppearanceItemCount > 1)
+                ImGui.TextUnformatted(item.AppearanceItemCount.ToString());
+            else
+                ImGui.TextDisabled("-");
+
+            ImGui.TableSetColumnIndex(3);
             ImGui.AlignTextToFramePadding();
             if (item.IsOwned)
                 ImGui.TextColored(new Vector4(0.25f, 0.9f, 0.4f, 1f), "[x]");

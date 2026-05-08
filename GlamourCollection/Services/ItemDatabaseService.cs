@@ -38,7 +38,11 @@ public sealed class ItemDatabaseService
             var record = new EquipmentRecord(
                 item.RowId,
                 name,
-                item.Icon);
+                item.Icon,
+                item.ItemUICategory.RowId,
+                item.EquipSlotCategory.RowId,
+                item.ModelMain,
+                item.ModelSub);
 
             this.equipment.Add(record);
             this.equipmentById[record.ItemId] = record;
