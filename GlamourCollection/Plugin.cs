@@ -7,11 +7,13 @@ using Dalamud.Plugin.Services;
 using ECommons;
 using ECommons.Automation;
 using ECommons.DalamudServices;
+using ECommons.DalamudServices.Legacy;
 using FFXIVClientStructs.FFXIV.Client.Game.Character;
 using FFXIVClientStructs.FFXIV.Client.Game.Object;
 using FFXIVClientStructs.FFXIV.Client.Graphics.Scene;
 using FFXIVClientStructs.FFXIV.Client.UI.Info;
 using Lumina.Excel.Sheets;
+using Main.Services;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -36,6 +38,12 @@ namespace Main
             //new配置出来
             Configuration = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
             Configuration.Init();
+            ItemDatabase = new ItemDatabaseService();
+            OwnedItems = new OwnedItemRepository();
+            InventoryScanner = new InventoryScanner(ItemDatabase);
+            Ownership = new OwnershipService(ItemDatabase, OwnedItems);
+            TryOn = new TryOnService();
+            Ownership.Refresh();
             //窗口类
             _mainWindow = new MainWindow();
             _windowSystem.AddWindow(_mainWindow);
@@ -49,11 +57,15 @@ namespace Main
             //绘制UI
             Svc.PluginInterface.UiBuilder.Draw += DrawUI;
             Svc.PluginInterface.UiBuilder.OpenMainUi += ToggleMainUI;
+            Svc.ClientState.Login += OnLogin;
+            Svc.ClientState.Logout += OnLogout;
+            Svc.Framework.Update += OnFrameworkUpdate;
 
             _mainWindow.RespectCloseHotkey = Configuration.IsEscCloseWindow;
 
             //启动时根据情况选择是否开启，方便测试
             _mainWindow.IsOpen = Configuration.IsLoginedOpenWindow;
+            scanWhenCharacterReady = true;
         }
 
         #region Common
@@ -75,6 +87,71 @@ namespace Main
         {
             _mainWindow.Toggle();
         }
+
+        private void OnLogin()
+        {
+            scanWhenCharacterReady = true;
+        }
+
+        private void OnLogout(int type, int code)
+        {
+            scanWhenCharacterReady = false;
+            loadedCharacterId = 0;
+            OwnedItems.Clear();
+            Ownership.Refresh();
+            LastInventoryScanStatus = "Waiting for character login.";
+            LastInventoryScanAt = null;
+        }
+
+        private void OnFrameworkUpdate(IFramework framework)
+        {
+            if (!Svc.ClientState.IsLoggedIn)
+                return;
+
+            var characterId = Svc.ClientState.LocalContentId;
+            if (characterId == 0)
+                return;
+
+            if (loadedCharacterId != characterId)
+            {
+                loadedCharacterId = characterId;
+                OwnedItems.Load(characterId);
+                Ownership.Refresh();
+                scanWhenCharacterReady = true;
+            }
+
+            if (!scanWhenCharacterReady)
+                return;
+
+            RescanOwnedItems();
+            scanWhenCharacterReady = false;
+        }
+
+        public void RescanOwnedItems()
+        {
+            if (!Svc.ClientState.IsLoggedIn || Svc.ClientState.LocalContentId == 0)
+            {
+                LastInventoryScanStatus = "Log in to scan inventory.";
+                LastInventoryScanAt = null;
+                return;
+            }
+
+            var characterId = Svc.ClientState.LocalContentId;
+            if (loadedCharacterId != characterId)
+            {
+                loadedCharacterId = characterId;
+                OwnedItems.Load(characterId);
+            }
+
+            var worldId = Svc.ClientState.LocalPlayer?.HomeWorld.RowId ?? 0;
+            var snapshot = InventoryScanner.ScanPhaseOne(characterId, worldId);
+
+            OwnedItems.ReplaceAll(characterId, snapshot);
+            Ownership.Refresh();
+
+            LastInventoryScanAt = DateTimeOffset.Now;
+            LastInventoryScanStatus = $"Scanned {snapshot.Count} owned equipment locations.";
+        }
         #endregion
 
         //退出方法
@@ -91,6 +168,9 @@ namespace Main
             //移除绘制监听
             Svc.PluginInterface.UiBuilder.Draw -= DrawUI;
             Svc.PluginInterface.UiBuilder.OpenMainUi -= ToggleMainUI;
+            Svc.ClientState.Login -= OnLogin;
+            Svc.ClientState.Logout -= OnLogout;
+            Svc.Framework.Update -= OnFrameworkUpdate;
             //
             ECommonsMain.Dispose();
         }

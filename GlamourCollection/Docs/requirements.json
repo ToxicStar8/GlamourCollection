@@ -1,0 +1,50 @@
+{
+  "plugin": "GlamourCollection",
+  "game": "Final Fantasy XIV",
+  "platform": "Dalamud",
+  "privacy": {
+    "storage": "local-only",
+    "uploadsInventoryData": false
+  },
+  "scope": {
+    "tracksPermanentUnlocks": false,
+    "tracksPreviouslyObtainedItems": false,
+    "groupsSharedAppearances": false,
+    "comparesAppearanceModelIds": false,
+    "ownershipKey": "ItemId",
+    "ownedDefinition": "An equippable item is owned only while at least one matching ItemId exists in an accessible scanned inventory."
+  },
+  "phase1": {
+    "status": "in-progress",
+    "inventorySources": [
+      "Inventory",
+      "EquippedItems",
+      "ArmouryChest"
+    ],
+    "features": [
+      "Scan player inventory and armoury chest.",
+      "Build an equippable item database from Lumina Item rows.",
+      "Compare equipment ItemId with owned inventory ItemId.",
+      "Persist owned item records as local JSON.",
+      "Show a basic list view with icon, item name, and owned check mark."
+    ],
+    "excluded": [
+      "Retainer scan",
+      "Saddlebag scan",
+      "Glamour dresser scan",
+      "Armoire scan",
+      "Grid view",
+      "Source parsing",
+      "Try-on execution",
+      "Inventory change event watching"
+    ]
+  },
+  "futureModules": [
+    "InventoryWatcher",
+    "SourceInfoService",
+    "TryOnService",
+    "GridView",
+    "AdvancedFiltering",
+    "SpecialContainerScanners"
+  ]
+}

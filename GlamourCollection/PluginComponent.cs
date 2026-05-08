@@ -7,6 +7,7 @@ using Dalamud.Utility;
 using ECommons.DalamudServices;
 using FFXIVClientStructs.FFXIV.Client.UI.Info;
 using Lumina.Excel.Sheets;
+using Main.Services;
 using System;
 using System.Collections.Generic;
 using World = Lumina.Excel.Sheets.World;
@@ -26,7 +27,17 @@ namespace Main
         private MainWindow _mainWindow { get; init; }
         //配置
         public Configuration Configuration { get; init; }
+        public ItemDatabaseService ItemDatabase { get; private set; } = null!;
+        public OwnedItemRepository OwnedItems { get; private set; } = null!;
+        public InventoryScanner InventoryScanner { get; private set; } = null!;
+        public OwnershipService Ownership { get; private set; } = null!;
+        public ITryOnService TryOn { get; private set; } = null!;
+        public DateTimeOffset? LastInventoryScanAt { get; private set; }
+        public string LastInventoryScanStatus { get; private set; } = "Waiting for character login.";
         //自己
-        public static Plugin Instance;
+        public static Plugin Instance = null!;
+
+        private bool scanWhenCharacterReady;
+        private ulong loadedCharacterId;
     }
 }
