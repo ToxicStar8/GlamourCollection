@@ -93,6 +93,24 @@ public sealed class OwnedItemRepository
         this.Save();
     }
 
+    public void ReplaceGlamourDresserSnapshot(ulong characterId, IEnumerable<OwnedItemRecord> snapshot)
+    {
+        this.currentCharacterId = characterId;
+        this.records.RemoveAll(IsGlamourDresserRecord);
+        this.records.AddRange(snapshot);
+        this.SortRecords();
+        this.Save();
+    }
+
+    public void ReplaceArmoireSnapshot(ulong characterId, IEnumerable<OwnedItemRecord> snapshot)
+    {
+        this.currentCharacterId = characterId;
+        this.records.RemoveAll(IsArmoireRecord);
+        this.records.AddRange(snapshot);
+        this.SortRecords();
+        this.Save();
+    }
+
     public int ClearRetainerSnapshots(ulong characterId)
     {
         this.currentCharacterId = characterId;
@@ -110,6 +128,32 @@ public sealed class OwnedItemRepository
     {
         this.currentCharacterId = characterId;
         var removed = this.records.RemoveAll(item => IsSaddlebagRecord(item) || IsPremiumSaddlebagRecord(item));
+        if (removed > 0)
+        {
+            this.SortRecords();
+            this.Save();
+        }
+
+        return removed;
+    }
+
+    public int ClearGlamourDresserSnapshots(ulong characterId)
+    {
+        this.currentCharacterId = characterId;
+        var removed = this.records.RemoveAll(IsGlamourDresserRecord);
+        if (removed > 0)
+        {
+            this.SortRecords();
+            this.Save();
+        }
+
+        return removed;
+    }
+
+    public int ClearArmoireSnapshots(ulong characterId)
+    {
+        this.currentCharacterId = characterId;
+        var removed = this.records.RemoveAll(IsArmoireRecord);
         if (removed > 0)
         {
             this.SortRecords();
@@ -172,6 +216,12 @@ public sealed class OwnedItemRepository
         if (IsPremiumSaddlebagRecord(item))
             return 3;
 
+        if (IsGlamourDresserRecord(item))
+            return 4;
+
+        if (IsArmoireRecord(item))
+            return 5;
+
         return 0;
     }
 
@@ -191,19 +241,36 @@ public sealed class OwnedItemRepository
         => item.RetainerId != 0
            || !string.IsNullOrWhiteSpace(item.RetainerName)
            || item.SourceContainer.StartsWith("Retainer:", StringComparison.Ordinal)
+           || item.SourceContainer.StartsWith("雇员:", StringComparison.Ordinal)
            || item.ContainerType.StartsWith("Retainer", StringComparison.Ordinal);
 
     private static bool IsPersistentExternalRecord(OwnedItemRecord item)
-        => IsRetainerRecord(item) || IsSaddlebagRecord(item) || IsPremiumSaddlebagRecord(item);
+        => IsRetainerRecord(item)
+           || IsSaddlebagRecord(item)
+           || IsPremiumSaddlebagRecord(item)
+           || IsGlamourDresserRecord(item)
+           || IsArmoireRecord(item);
 
     private static bool IsSaddlebagRecord(OwnedItemRecord item)
         => string.Equals(item.SourceContainer, "Saddlebag", StringComparison.Ordinal)
+           || string.Equals(item.SourceContainer, "陆行鸟背包", StringComparison.Ordinal)
            || item.ContainerType.StartsWith("SaddleBag", StringComparison.Ordinal);
 
     private static bool IsPremiumSaddlebagRecord(OwnedItemRecord item)
         => string.Equals(item.SourceContainer, "Premium Saddlebag", StringComparison.Ordinal)
+           || string.Equals(item.SourceContainer, "高级陆行鸟背包", StringComparison.Ordinal)
            || item.ContainerType.StartsWith("PremiumSaddleBag", StringComparison.Ordinal);
 
+    private static bool IsGlamourDresserRecord(OwnedItemRecord item)
+        => string.Equals(item.SourceContainer, "Glamour Dresser", StringComparison.Ordinal)
+           || string.Equals(item.SourceContainer, "幻化柜", StringComparison.Ordinal)
+           || item.ContainerType.StartsWith("GlamourDresser", StringComparison.Ordinal);
+
+    private static bool IsArmoireRecord(OwnedItemRecord item)
+        => string.Equals(item.SourceContainer, "Armoire", StringComparison.Ordinal)
+           || string.Equals(item.SourceContainer, "收藏柜", StringComparison.Ordinal)
+           || item.ContainerType.StartsWith("Armoire", StringComparison.Ordinal);
+
     private static string NormalizeRetainerName(string retainerName)
-        => string.IsNullOrWhiteSpace(retainerName) ? "Unknown Retainer" : retainerName.Trim();
+        => string.IsNullOrWhiteSpace(retainerName) ? "未知雇员" : retainerName.Trim();
 }

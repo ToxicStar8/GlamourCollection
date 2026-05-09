@@ -165,6 +165,7 @@ public sealed class EquipmentFilterService
 
     private static SourceCategory GetSourceCategory(EquipmentRecord item)
         => item.SourceInfo.Equals("Unknown", StringComparison.OrdinalIgnoreCase)
+           || item.SourceInfo.Equals("未知来源", StringComparison.OrdinalIgnoreCase)
             ? SourceCategory.Unknown
             : SourceCategory.Unknown;
 

@@ -1,10 +1,13 @@
 using Dalamud.Game.Inventory;
 using ECommons.DalamudServices;
 using FFXIVClientStructs.FFXIV.Client.Game;
+using FFXIVClientStructs.FFXIV.Client.Game.UI;
+using Lumina.Excel.Sheets;
 using Main.Models;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using LuminaCabinet = Lumina.Excel.Sheets.Cabinet;
 
 namespace Main.Services;
 
@@ -146,7 +149,7 @@ public unsafe sealed class InventoryScanner(ItemDatabaseService itemDatabase)
                     ItemName = equipment.Name,
                     Quantity = inventoryItem.Quantity,
                     IsHq = inventoryItem.IsHq,
-                    SourceContainer = $"Retainer: {retainerName}",
+                    SourceContainer = $"雇员: {retainerName}",
                     ContainerType = inventoryItem.ContainerType.ToString(),
                     ContainerId = (ushort)inventoryItem.ContainerType,
                     Slot = inventoryItem.InventorySlot,
@@ -169,13 +172,13 @@ public unsafe sealed class InventoryScanner(ItemDatabaseService itemDatabase)
         itemDatabase.Load();
 
         var now = DateTimeOffset.UtcNow;
-        var saddlebag = this.ScanSaddlebagGroup(characterId, worldId, now, SaddlebagContainers, "Saddlebag");
+        var saddlebag = this.ScanSaddlebagGroup(characterId, worldId, now, SaddlebagContainers, "陆行鸟背包");
         var premiumSaddlebag = this.ScanSaddlebagGroup(
             characterId,
             worldId,
             now,
             PremiumSaddlebagContainers,
-            "Premium Saddlebag");
+            "高级陆行鸟背包");
 
         return new SaddlebagInventorySnapshot(
             saddlebag.IsReadable,
@@ -233,25 +236,180 @@ public unsafe sealed class InventoryScanner(ItemDatabaseService itemDatabase)
         return new SaddlebagGroupSnapshot(hasReadableContainers, records);
     }
 
+    public GlamourDresserInventorySnapshot ScanGlamourDresser(ulong characterId, uint worldId)
+    {
+        var manager = MirageManager.Instance();
+        if (manager == null || !manager->PrismBoxLoaded)
+            return new GlamourDresserInventorySnapshot(false, []);
+
+        itemDatabase.Load();
+
+        var now = DateTimeOffset.UtcNow;
+        var records = new List<OwnedItemRecord>();
+        var setItems = Svc.Data.GetExcelSheet<MirageStoreSetItem>()
+            .ToDictionary(item => item.RowId);
+        var itemIds = manager->PrismBoxItemIds;
+
+        for (var index = 0; index < itemIds.Length; index++)
+        {
+            var rawItemId = itemIds[index];
+            if (rawItemId == 0)
+                continue;
+
+            if (this.TryAddExternalEquipmentRecord(
+                    records,
+                    rawItemId,
+                    "幻化柜",
+                    "GlamourDresser",
+                    (uint)index,
+                    characterId,
+                    worldId,
+                    now))
+                continue;
+
+            if (setItems.TryGetValue(rawItemId, out var setItem))
+                this.AddGlamourDresserSetRecords(manager, (uint)index, setItem, records, characterId, worldId, now);
+        }
+
+        return new GlamourDresserInventorySnapshot(true, records);
+    }
+
+    public ArmoireInventorySnapshot ScanArmoire(ulong characterId, uint worldId)
+    {
+        var uiState = UIState.Instance();
+        if (uiState == null)
+            return new ArmoireInventorySnapshot(false, []);
+
+        var cabinet = &uiState->Cabinet;
+        if (!cabinet->IsCabinetLoaded())
+            return new ArmoireInventorySnapshot(false, []);
+
+        itemDatabase.Load();
+
+        var now = DateTimeOffset.UtcNow;
+        var records = new List<OwnedItemRecord>();
+
+        foreach (var cabinetItem in Svc.Data.GetExcelSheet<LuminaCabinet>())
+        {
+            var rawItemId = cabinetItem.Item.RowId;
+            var cabinetRowId = cabinetItem.RowId;
+            if (rawItemId == 0 || (!cabinet->IsItemInCabinet(rawItemId) && !cabinet->IsItemInCabinet(cabinetRowId)))
+                continue;
+
+            this.TryAddExternalEquipmentRecord(
+                records,
+                rawItemId,
+                "收藏柜",
+                "Armoire",
+                cabinetRowId,
+                characterId,
+                worldId,
+                now);
+        }
+
+        return new ArmoireInventorySnapshot(true, records);
+    }
+
+    private void AddGlamourDresserSetRecords(
+        MirageManager* manager,
+        uint prismBoxIndex,
+        MirageStoreSetItem setItem,
+        List<OwnedItemRecord> records,
+        ulong characterId,
+        uint worldId,
+        DateTimeOffset updatedAt)
+    {
+        foreach (var slot in GetMirageStoreSetSlots(setItem))
+        {
+            if (slot.ItemId == 0 || !manager->IsSetSlotUnlocked(prismBoxIndex, slot.SlotIndex))
+                continue;
+
+            this.TryAddExternalEquipmentRecord(
+                records,
+                slot.ItemId,
+                "幻化柜",
+                "GlamourDresser",
+                (prismBoxIndex * 100) + (uint)slot.SlotIndex,
+                characterId,
+                worldId,
+                updatedAt);
+        }
+    }
+
+    private bool TryAddExternalEquipmentRecord(
+        List<OwnedItemRecord> records,
+        uint rawItemId,
+        string sourceContainer,
+        string containerType,
+        uint slot,
+        ulong characterId,
+        uint worldId,
+        DateTimeOffset updatedAt)
+    {
+        var baseItemId = NormalizeBaseItemId(rawItemId);
+        if (!itemDatabase.TryGetEquipment(baseItemId, out var equipment))
+            return false;
+
+        records.Add(new OwnedItemRecord
+        {
+            RawItemId = rawItemId,
+            BaseItemId = baseItemId,
+            ItemId = baseItemId,
+            ItemName = equipment.Name,
+            Quantity = 1,
+            IsHq = rawItemId != baseItemId,
+            SourceContainer = sourceContainer,
+            ContainerType = containerType,
+            Slot = slot,
+            CharacterId = characterId,
+            WorldId = worldId,
+            UpdatedAt = updatedAt,
+        });
+
+        return true;
+    }
+
+    private static IReadOnlyList<MirageStoreSetSlot> GetMirageStoreSetSlots(MirageStoreSetItem setItem)
+        =>
+        [
+            new MirageStoreSetSlot(0, setItem.MainHand.RowId),
+            new MirageStoreSetSlot(1, setItem.OffHand.RowId),
+            new MirageStoreSetSlot(2, setItem.Head.RowId),
+            new MirageStoreSetSlot(3, setItem.Body.RowId),
+            new MirageStoreSetSlot(4, setItem.Hands.RowId),
+            new MirageStoreSetSlot(5, setItem.Legs.RowId),
+            new MirageStoreSetSlot(6, setItem.Feet.RowId),
+            new MirageStoreSetSlot(7, setItem.Earrings.RowId),
+            new MirageStoreSetSlot(8, setItem.Necklace.RowId),
+            new MirageStoreSetSlot(9, setItem.Bracelets.RowId),
+            new MirageStoreSetSlot(10, setItem.Ring.RowId),
+        ];
+
+    private static uint NormalizeBaseItemId(uint itemId)
+    {
+        const uint hqItemIdOffset = 1_000_000;
+        return itemId > hqItemIdOffset ? itemId - hqItemIdOffset : itemId;
+    }
+
     private static string GetContainerLabel(GameInventoryType type)
         => type switch
         {
-            GameInventoryType.Inventory1 => "Inventory 1",
-            GameInventoryType.Inventory2 => "Inventory 2",
-            GameInventoryType.Inventory3 => "Inventory 3",
-            GameInventoryType.Inventory4 => "Inventory 4",
-            GameInventoryType.EquippedItems => "Equipped",
-            GameInventoryType.ArmoryMainHand => "Armoury Main Hand",
-            GameInventoryType.ArmoryOffHand => "Armoury Off Hand",
-            GameInventoryType.ArmoryHead => "Armoury Head",
-            GameInventoryType.ArmoryBody => "Armoury Body",
-            GameInventoryType.ArmoryHands => "Armoury Hands",
-            GameInventoryType.ArmoryLegs => "Armoury Legs",
-            GameInventoryType.ArmoryFeets => "Armoury Feet",
-            GameInventoryType.ArmoryEar => "Armoury Earrings",
-            GameInventoryType.ArmoryNeck => "Armoury Necklace",
-            GameInventoryType.ArmoryWrist => "Armoury Bracelet",
-            GameInventoryType.ArmoryRings => "Armoury Rings",
+            GameInventoryType.Inventory1 => "背包 1",
+            GameInventoryType.Inventory2 => "背包 2",
+            GameInventoryType.Inventory3 => "背包 3",
+            GameInventoryType.Inventory4 => "背包 4",
+            GameInventoryType.EquippedItems => "已装备",
+            GameInventoryType.ArmoryMainHand => "军械库 主手",
+            GameInventoryType.ArmoryOffHand => "军械库 副手",
+            GameInventoryType.ArmoryHead => "军械库 头部",
+            GameInventoryType.ArmoryBody => "军械库 身体",
+            GameInventoryType.ArmoryHands => "军械库 手部",
+            GameInventoryType.ArmoryLegs => "军械库 腿部",
+            GameInventoryType.ArmoryFeets => "军械库 脚部",
+            GameInventoryType.ArmoryEar => "军械库 耳饰",
+            GameInventoryType.ArmoryNeck => "军械库 项链",
+            GameInventoryType.ArmoryWrist => "军械库 手镯",
+            GameInventoryType.ArmoryRings => "军械库 戒指",
             _ => type.ToString(),
         };
 
@@ -269,9 +427,11 @@ public unsafe sealed class InventoryScanner(ItemDatabaseService itemDatabase)
     }
 
     private static string NormalizeRetainerName(string retainerName)
-        => string.IsNullOrWhiteSpace(retainerName) ? "Unknown Retainer" : retainerName.Trim();
+        => string.IsNullOrWhiteSpace(retainerName) ? "未知雇员" : retainerName.Trim();
 
     private sealed record RetainerIdentity(ulong Id, string Name, int ItemCount);
+
+    private readonly record struct MirageStoreSetSlot(int SlotIndex, uint ItemId);
 }
 
 public sealed record RetainerInventorySnapshot(
@@ -291,5 +451,13 @@ public sealed record SaddlebagInventorySnapshot(
 }
 
 internal sealed record SaddlebagGroupSnapshot(
+    bool IsReadable,
+    IReadOnlyList<OwnedItemRecord> Records);
+
+public sealed record GlamourDresserInventorySnapshot(
+    bool IsReadable,
+    IReadOnlyList<OwnedItemRecord> Records);
+
+public sealed record ArmoireInventorySnapshot(
     bool IsReadable,
     IReadOnlyList<OwnedItemRecord> Records);

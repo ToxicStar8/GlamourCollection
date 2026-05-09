@@ -5,5 +5,5 @@ namespace Main.Services;
 public sealed class SourceInfoService
 {
     public string GetSourceInfo(Item item)
-        => "Unknown";
+        => "未知来源";
 }

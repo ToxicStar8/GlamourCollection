@@ -34,10 +34,12 @@ namespace Main
         public InventoryWatcher InventoryWatcher { get; private set; } = null!;
         public RetainerInventoryWatcher RetainerInventoryWatcher { get; private set; } = null!;
         public SaddlebagInventoryWatcher SaddlebagInventoryWatcher { get; private set; } = null!;
+        public GlamourDresserInventoryWatcher GlamourDresserInventoryWatcher { get; private set; } = null!;
+        public ArmoireInventoryWatcher ArmoireInventoryWatcher { get; private set; } = null!;
         public OwnershipService Ownership { get; private set; } = null!;
         public ITryOnService TryOn { get; private set; } = null!;
         public DateTimeOffset? LastInventoryScanAt { get; private set; }
-        public string LastInventoryScanStatus { get; private set; } = "Waiting for character login.";
+        public string LastInventoryScanStatus { get; private set; } = "等待角色登录。";
         //自己
         public static Plugin Instance = null!;
 

@@ -251,6 +251,14 @@ namespace Main
                 plugin.ClearSaddlebagInventoryCache();
 
             ImGui.SameLine();
+            if (ImGui.Button("清除幻化柜缓存"))
+                plugin.ClearGlamourDresserInventoryCache();
+
+            ImGui.SameLine();
+            if (ImGui.Button("清除收藏柜缓存"))
+                plugin.ClearArmoireInventoryCache();
+
+            ImGui.SameLine();
             ImGui.TextUnformatted(plugin.LastInventoryScanStatus);
 
             if (plugin.LastInventoryScanAt is { } lastScan)
@@ -262,7 +270,7 @@ namespace Main
 
             var filtered = GetFilteredItems(plugin.Ownership, plugin.Configuration);
             var activeFilterCount = this.filterService.GetActiveFilterCount(this.searchText, plugin.Configuration.Filters);
-            ImGui.TextUnformatted($"Showing {filtered.Count} / {plugin.Ownership.ViewModels.Count} | 已拥有 {plugin.Ownership.OwnedItemCount} | 启用筛选 {activeFilterCount}");
+            ImGui.TextUnformatted($"显示 {filtered.Count} / {plugin.Ownership.ViewModels.Count} | 已拥有 {plugin.Ownership.OwnedItemCount} | 启用筛选 {activeFilterCount}");
 
             this.DrawTryOnStatus();
             this.DrawEquipmentTable(filtered);
@@ -491,19 +499,19 @@ namespace Main
             var equipMin = filters.EquipLevelMin;
             var equipMax = filters.EquipLevelMax;
             ImGui.SetNextItemWidth(72f);
-            var changed = ImGui.InputInt("装等 Min", ref equipMin);
+            var changed = ImGui.InputInt("装备等级下限", ref equipMin);
             ImGui.SameLine();
             ImGui.SetNextItemWidth(72f);
-            changed |= ImGui.InputInt("Max##equipLevelMax", ref equipMax);
+            changed |= ImGui.InputInt("上限##equipLevelMax", ref equipMax);
 
             var itemMin = filters.ItemLevelMin;
             var itemMax = filters.ItemLevelMax;
             ImGui.SameLine();
             ImGui.SetNextItemWidth(72f);
-            changed |= ImGui.InputInt("品级 Min", ref itemMin);
+            changed |= ImGui.InputInt("物品等级下限", ref itemMin);
             ImGui.SameLine();
             ImGui.SetNextItemWidth(72f);
-            changed |= ImGui.InputInt("Max##itemLevelMax", ref itemMax);
+            changed |= ImGui.InputInt("上限##itemLevelMax", ref itemMax);
 
             if (changed)
             {
@@ -729,19 +737,19 @@ namespace Main
         private static string GetOwnedDisplayText(EquipmentViewModel item)
         {
             if (item.HasNormalQuality && item.HasHighQuality)
-                return "[x] NQ+HQ";
+                return "[已拥有] NQ+HQ";
 
             if (item.HasHighQuality)
-                return "[x] HQ";
+                return "[已拥有] HQ";
 
-            return "[x] NQ";
+            return "[已拥有] NQ";
         }
 
         private static void DrawEquipmentTooltip(EquipmentViewModel item)
         {
             ImGui.BeginTooltip();
             ImGui.TextUnformatted(item.Item.Name);
-            ImGui.TextDisabled($"ItemId: {item.Item.ItemId}");
+            ImGui.TextDisabled($"物品ID: {item.Item.ItemId}");
             ImGui.Separator();
             ImGui.TextUnformatted($"分类: {item.Item.CategoryName}");
             ImGui.TextUnformatted($"职业: {item.Item.ClassJobCategoryName}");
@@ -774,10 +782,67 @@ namespace Main
             if (ImGui.BeginChild("##ownedLocationTooltipList", new Vector2(560f, listHeight), true))
             {
                 foreach (var location in locations)
-                    ImGui.TextUnformatted($"{GetOwnedQualityText([location])} {location.SourceContainer} / Slot {location.Slot}");
+                    ImGui.TextUnformatted($"{GetOwnedQualityText([location])} {GetOwnedLocationSourceText(location)} / 格子 {location.Slot}");
             }
 
             ImGui.EndChild();
+        }
+
+        private static string GetOwnedLocationSourceText(OwnedItemRecord location)
+        {
+            if (!string.IsNullOrWhiteSpace(location.RetainerName) || location.RetainerId != 0)
+                return $"雇员: {NormalizeRetainerLocationName(location)}";
+
+            var source = location.SourceContainer;
+            if (source.StartsWith("Retainer:", StringComparison.Ordinal))
+                return $"雇员: {source["Retainer:".Length..].Trim()}";
+
+            return source switch
+            {
+                "Inventory 1" => "背包 1",
+                "Inventory 2" => "背包 2",
+                "Inventory 3" => "背包 3",
+                "Inventory 4" => "背包 4",
+                "Equipped" => "已装备",
+                "Armoury Main Hand" => "军械库 主手",
+                "Armoury Off Hand" => "军械库 副手",
+                "Armoury Head" => "军械库 头部",
+                "Armoury Body" => "军械库 身体",
+                "Armoury Hands" => "军械库 手部",
+                "Armoury Legs" => "军械库 腿部",
+                "Armoury Feet" => "军械库 脚部",
+                "Armoury Earrings" => "军械库 耳饰",
+                "Armoury Necklace" => "军械库 项链",
+                "Armoury Bracelet" => "军械库 手镯",
+                "Armoury Rings" => "军械库 戒指",
+                "Saddlebag" => "陆行鸟背包",
+                "Premium Saddlebag" => "高级陆行鸟背包",
+                "Glamour Dresser" => "幻化柜",
+                "Armoire" => "收藏柜",
+                _ => source,
+            };
+        }
+
+        private static string NormalizeRetainerLocationName(OwnedItemRecord location)
+        {
+            if (!string.IsNullOrWhiteSpace(location.RetainerName))
+                return location.RetainerName.Trim();
+
+            if (location.SourceContainer.StartsWith("Retainer:", StringComparison.Ordinal))
+            {
+                var name = location.SourceContainer["Retainer:".Length..].Trim();
+                if (!string.IsNullOrWhiteSpace(name))
+                    return name;
+            }
+
+            if (location.SourceContainer.StartsWith("雇员:", StringComparison.Ordinal))
+            {
+                var name = location.SourceContainer["雇员:".Length..].Trim();
+                if (!string.IsNullOrWhiteSpace(name))
+                    return name;
+            }
+
+            return "未知雇员";
         }
 
         private static void DrawSameModelList(EquipmentViewModel item)

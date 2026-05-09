@@ -45,6 +45,8 @@ namespace Main
             InventoryWatcher = new InventoryWatcher();
             RetainerInventoryWatcher = new RetainerInventoryWatcher();
             SaddlebagInventoryWatcher = new SaddlebagInventoryWatcher();
+            GlamourDresserInventoryWatcher = new GlamourDresserInventoryWatcher();
+            ArmoireInventoryWatcher = new ArmoireInventoryWatcher();
             Ownership = new OwnershipService(ItemDatabase, OwnedItems, Configuration);
             TryOn = new TryOnService();
             Ownership.Refresh();
@@ -104,6 +106,8 @@ namespace Main
             InventoryWatcher.ClearPending();
             RetainerInventoryWatcher.ClearPending();
             SaddlebagInventoryWatcher.ClearPending();
+            GlamourDresserInventoryWatcher.ClearPending();
+            ArmoireInventoryWatcher.ClearPending();
             OwnedItems.Clear();
             Ownership.Refresh();
             LastInventoryScanStatus = "等待角色登录。";
@@ -145,6 +149,12 @@ namespace Main
 
             if (SaddlebagInventoryWatcher.ConsumeScanRequest())
                 ScanSaddlebagInventory(SaddlebagInventoryWatcher.LastScanReason);
+
+            if (GlamourDresserInventoryWatcher.ConsumeScanRequest())
+                ScanGlamourDresserInventory(GlamourDresserInventoryWatcher.LastScanReason);
+
+            if (ArmoireInventoryWatcher.ConsumeScanRequest())
+                ScanArmoireInventory(ArmoireInventoryWatcher.LastScanReason);
         }
 
         public void RescanOwnedItems(string reason = "手动扫描。")
@@ -173,11 +183,11 @@ namespace Main
             LastInventoryScanStatus = $"{reason} 已扫描 {snapshot.Count} 个装备位置。";
         }
 
-        private void ScanCurrentRetainerInventory(string reason = "Retainer inventory scan.", bool silentIfUnreadable = false)
+        private void ScanCurrentRetainerInventory(string reason = "雇员库存扫描。", bool silentIfUnreadable = false)
         {
             if (!Svc.ClientState.IsLoggedIn || Svc.ClientState.LocalContentId == 0)
             {
-                LastInventoryScanStatus = "Please log in before scanning retainer inventory.";
+                LastInventoryScanStatus = "请先登录角色再扫描雇员库存。";
                 LastInventoryScanAt = null;
                 return;
             }
@@ -193,23 +203,31 @@ namespace Main
             var snapshot = InventoryScanner.ScanCurrentRetainer(characterId, worldId);
             if (!snapshot.IsReadable)
             {
+                if (RetainerInventoryWatcher.ScheduleRetry(reason, silentIfUnreadable))
+                {
+                    if (!silentIfUnreadable)
+                        LastInventoryScanStatus = "雇员库存仍在加载，正在自动重试扫描。";
+                    return;
+                }
+
                 if (!silentIfUnreadable)
-                    LastInventoryScanStatus = "Retainer inventory is not readable yet.";
+                    LastInventoryScanStatus = "雇员库存暂时不可读取，请打开雇员道具管理后稍等。";
                 return;
             }
 
+            RetainerInventoryWatcher.MarkScanCompleted();
             OwnedItems.ReplaceRetainerSnapshot(characterId, snapshot.RetainerId, snapshot.RetainerName, snapshot.Records);
             Ownership.Refresh();
 
             LastInventoryScanAt = DateTimeOffset.Now;
-            LastInventoryScanStatus = $"{reason} {snapshot.RetainerName}: {snapshot.Records.Count} equipment locations.";
+            LastInventoryScanStatus = $"{reason} {snapshot.RetainerName}: 已扫描 {snapshot.Records.Count} 个装备位置。";
         }
 
-        private void ScanSaddlebagInventory(string reason = "Saddlebag inventory scan.")
+        private void ScanSaddlebagInventory(string reason = "陆行鸟背包扫描。")
         {
             if (!Svc.ClientState.IsLoggedIn || Svc.ClientState.LocalContentId == 0)
             {
-                LastInventoryScanStatus = "Please log in before scanning saddlebag inventory.";
+                LastInventoryScanStatus = "请先登录角色再扫描陆行鸟背包。";
                 LastInventoryScanAt = null;
                 return;
             }
@@ -225,7 +243,7 @@ namespace Main
             var snapshot = InventoryScanner.ScanSaddlebag(characterId, worldId);
             if (!snapshot.IsReadable)
             {
-                LastInventoryScanStatus = "Saddlebag inventory is not readable yet.";
+                LastInventoryScanStatus = "陆行鸟背包暂时不可读取，请打开陆行鸟背包后稍等。";
                 return;
             }
 
@@ -237,21 +255,89 @@ namespace Main
             Ownership.Refresh();
 
             var saddlebagText = snapshot.IsSaddlebagReadable
-                ? $"Saddlebag: {snapshot.SaddlebagRecordCount}"
-                : "Saddlebag: unreadable";
+                ? $"陆行鸟背包: {snapshot.SaddlebagRecordCount} 个装备位置"
+                : "陆行鸟背包: 不可读取";
             var premiumText = snapshot.IsPremiumSaddlebagReadable
-                ? $"Premium Saddlebag: {snapshot.PremiumSaddlebagRecordCount}"
-                : "Premium Saddlebag: unreadable";
+                ? $"高级陆行鸟背包: {snapshot.PremiumSaddlebagRecordCount} 个装备位置"
+                : "高级陆行鸟背包: 不可读取";
 
             LastInventoryScanAt = DateTimeOffset.Now;
             LastInventoryScanStatus = $"{reason} {saddlebagText}; {premiumText}.";
+        }
+
+        private void ScanGlamourDresserInventory(string reason = "幻化柜扫描。")
+        {
+            if (!Svc.ClientState.IsLoggedIn || Svc.ClientState.LocalContentId == 0)
+            {
+                LastInventoryScanStatus = "请先登录角色再扫描幻化柜。";
+                LastInventoryScanAt = null;
+                return;
+            }
+
+            var characterId = Svc.ClientState.LocalContentId;
+            if (loadedCharacterId != characterId)
+            {
+                loadedCharacterId = characterId;
+                OwnedItems.Load(characterId);
+            }
+
+            var worldId = Svc.ClientState.LocalPlayer?.HomeWorld.RowId ?? 0;
+            var snapshot = InventoryScanner.ScanGlamourDresser(characterId, worldId);
+            if (!snapshot.IsReadable)
+            {
+                LastInventoryScanStatus = "幻化柜暂时不可读取，请打开幻化柜后稍等。";
+                return;
+            }
+
+            OwnedItems.ReplaceGlamourDresserSnapshot(characterId, snapshot.Records);
+            Ownership.Refresh();
+
+            LastInventoryScanAt = DateTimeOffset.Now;
+            LastInventoryScanStatus = $"{reason} 幻化柜: 已扫描 {snapshot.Records.Count} 个装备位置。";
+        }
+
+        private void ScanArmoireInventory(string reason = "收藏柜扫描。")
+        {
+            if (!Svc.ClientState.IsLoggedIn || Svc.ClientState.LocalContentId == 0)
+            {
+                LastInventoryScanStatus = "请先登录角色再扫描收藏柜。";
+                LastInventoryScanAt = null;
+                return;
+            }
+
+            var characterId = Svc.ClientState.LocalContentId;
+            if (loadedCharacterId != characterId)
+            {
+                loadedCharacterId = characterId;
+                OwnedItems.Load(characterId);
+            }
+
+            var worldId = Svc.ClientState.LocalPlayer?.HomeWorld.RowId ?? 0;
+            var snapshot = InventoryScanner.ScanArmoire(characterId, worldId);
+            if (!snapshot.IsReadable)
+            {
+                if (ArmoireInventoryWatcher.ScheduleRetry(reason))
+                {
+                    LastInventoryScanStatus = "收藏柜数据仍在加载，正在自动重试扫描。";
+                    return;
+                }
+
+                LastInventoryScanStatus = "收藏柜暂时不可读取，请打开收藏柜的存入/取出界面并稍等。";
+                return;
+            }
+
+            OwnedItems.ReplaceArmoireSnapshot(characterId, snapshot.Records);
+            Ownership.Refresh();
+
+            LastInventoryScanAt = DateTimeOffset.Now;
+            LastInventoryScanStatus = $"{reason} 收藏柜: 已扫描 {snapshot.Records.Count} 个装备位置。";
         }
 
         public void ClearRetainerInventoryCache()
         {
             if (!Svc.ClientState.IsLoggedIn || Svc.ClientState.LocalContentId == 0)
             {
-                LastInventoryScanStatus = "Please log in before clearing retainer cache.";
+                LastInventoryScanStatus = "请先登录角色再清除雇员缓存。";
                 LastInventoryScanAt = null;
                 return;
             }
@@ -267,14 +353,14 @@ namespace Main
             Ownership.Refresh();
 
             LastInventoryScanAt = DateTimeOffset.Now;
-            LastInventoryScanStatus = $"Cleared {removed} retainer equipment cache records.";
+            LastInventoryScanStatus = $"已清除 {removed} 条雇员装备缓存。";
         }
 
         public void ClearSaddlebagInventoryCache()
         {
             if (!Svc.ClientState.IsLoggedIn || Svc.ClientState.LocalContentId == 0)
             {
-                LastInventoryScanStatus = "Please log in before clearing saddlebag cache.";
+                LastInventoryScanStatus = "请先登录角色再清除陆行鸟背包缓存。";
                 LastInventoryScanAt = null;
                 return;
             }
@@ -290,7 +376,53 @@ namespace Main
             Ownership.Refresh();
 
             LastInventoryScanAt = DateTimeOffset.Now;
-            LastInventoryScanStatus = $"Cleared {removed} saddlebag equipment cache records.";
+            LastInventoryScanStatus = $"已清除 {removed} 条陆行鸟背包装备缓存。";
+        }
+
+        public void ClearGlamourDresserInventoryCache()
+        {
+            if (!Svc.ClientState.IsLoggedIn || Svc.ClientState.LocalContentId == 0)
+            {
+                LastInventoryScanStatus = "请先登录角色再清除幻化柜缓存。";
+                LastInventoryScanAt = null;
+                return;
+            }
+
+            var characterId = Svc.ClientState.LocalContentId;
+            if (loadedCharacterId != characterId)
+            {
+                loadedCharacterId = characterId;
+                OwnedItems.Load(characterId);
+            }
+
+            var removed = OwnedItems.ClearGlamourDresserSnapshots(characterId);
+            Ownership.Refresh();
+
+            LastInventoryScanAt = DateTimeOffset.Now;
+            LastInventoryScanStatus = $"已清除 {removed} 条幻化柜装备缓存。";
+        }
+
+        public void ClearArmoireInventoryCache()
+        {
+            if (!Svc.ClientState.IsLoggedIn || Svc.ClientState.LocalContentId == 0)
+            {
+                LastInventoryScanStatus = "请先登录角色再清除收藏柜缓存。";
+                LastInventoryScanAt = null;
+                return;
+            }
+
+            var characterId = Svc.ClientState.LocalContentId;
+            if (loadedCharacterId != characterId)
+            {
+                loadedCharacterId = characterId;
+                OwnedItems.Load(characterId);
+            }
+
+            var removed = OwnedItems.ClearArmoireSnapshots(characterId);
+            Ownership.Refresh();
+
+            LastInventoryScanAt = DateTimeOffset.Now;
+            LastInventoryScanStatus = $"已清除 {removed} 条收藏柜装备缓存。";
         }
 
         #endregion
@@ -315,6 +447,8 @@ namespace Main
             InventoryWatcher.Dispose();
             RetainerInventoryWatcher.Dispose();
             SaddlebagInventoryWatcher.Dispose();
+            GlamourDresserInventoryWatcher.Dispose();
+            ArmoireInventoryWatcher.Dispose();
             //
             ECommonsMain.Dispose();
         }
