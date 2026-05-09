@@ -24,6 +24,10 @@ public sealed class OwnedItemRecord
 
     public uint Slot { get; set; }
 
+    public ulong RetainerId { get; set; }
+
+    public string RetainerName { get; set; } = string.Empty;
+
     public ulong CharacterId { get; set; }
 
     public uint WorldId { get; set; }

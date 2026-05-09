@@ -43,6 +43,7 @@ namespace Main
             OwnedItems = new OwnedItemRepository();
             InventoryScanner = new InventoryScanner(ItemDatabase);
             InventoryWatcher = new InventoryWatcher();
+            RetainerInventoryWatcher = new RetainerInventoryWatcher();
             Ownership = new OwnershipService(ItemDatabase, OwnedItems, Configuration);
             TryOn = new TryOnService();
             Ownership.Refresh();
@@ -100,6 +101,7 @@ namespace Main
             scanWhenCharacterReady = false;
             loadedCharacterId = 0;
             InventoryWatcher.ClearPending();
+            RetainerInventoryWatcher.ClearPending();
             OwnedItems.Clear();
             Ownership.Refresh();
             LastInventoryScanStatus = "等待角色登录。";
@@ -133,6 +135,9 @@ namespace Main
 
             if (InventoryWatcher.ConsumeRescanRequest())
                 RescanOwnedItems(InventoryWatcher.LastChangeReason);
+
+            if (RetainerInventoryWatcher.ConsumeScanRequest())
+                ScanCurrentRetainerInventory(RetainerInventoryWatcher.LastScanReason);
         }
 
         public void RescanOwnedItems(string reason = "手动扫描。")
@@ -154,12 +159,44 @@ namespace Main
             var worldId = Svc.ClientState.LocalPlayer?.HomeWorld.RowId ?? 0;
             var snapshot = InventoryScanner.ScanPhaseOne(characterId, worldId);
 
-            OwnedItems.ReplaceAll(characterId, snapshot);
+            OwnedItems.ReplacePhaseOneSnapshot(characterId, snapshot);
             Ownership.Refresh();
 
             LastInventoryScanAt = DateTimeOffset.Now;
             LastInventoryScanStatus = $"{reason} 已扫描 {snapshot.Count} 个装备位置。";
         }
+
+        private void ScanCurrentRetainerInventory(string reason = "Retainer inventory scan.")
+        {
+            if (!Svc.ClientState.IsLoggedIn || Svc.ClientState.LocalContentId == 0)
+            {
+                LastInventoryScanStatus = "Please log in before scanning retainer inventory.";
+                LastInventoryScanAt = null;
+                return;
+            }
+
+            var characterId = Svc.ClientState.LocalContentId;
+            if (loadedCharacterId != characterId)
+            {
+                loadedCharacterId = characterId;
+                OwnedItems.Load(characterId);
+            }
+
+            var worldId = Svc.ClientState.LocalPlayer?.HomeWorld.RowId ?? 0;
+            var snapshot = InventoryScanner.ScanCurrentRetainer(characterId, worldId);
+            if (!snapshot.IsReadable)
+            {
+                LastInventoryScanStatus = "Retainer inventory is not readable yet.";
+                return;
+            }
+
+            OwnedItems.ReplaceRetainerSnapshot(characterId, snapshot.RetainerId, snapshot.RetainerName, snapshot.Records);
+            Ownership.Refresh();
+
+            LastInventoryScanAt = DateTimeOffset.Now;
+            LastInventoryScanStatus = $"{reason} {snapshot.RetainerName}: {snapshot.Records.Count} equipment locations.";
+        }
+
         #endregion
 
         //退出方法
@@ -180,6 +217,7 @@ namespace Main
             Svc.ClientState.Logout -= OnLogout;
             Svc.Framework.Update -= OnFrameworkUpdate;
             InventoryWatcher.Dispose();
+            RetainerInventoryWatcher.Dispose();
             //
             ECommonsMain.Dispose();
         }

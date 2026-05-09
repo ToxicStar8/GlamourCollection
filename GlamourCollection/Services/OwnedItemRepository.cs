@@ -45,7 +45,32 @@ public sealed class OwnedItemRepository
     {
         this.currentCharacterId = characterId;
         this.records.Clear();
-        this.records.AddRange(snapshot.OrderBy(item => item.ContainerId).ThenBy(item => item.Slot));
+        this.records.AddRange(snapshot);
+        this.SortRecords();
+        this.Save();
+    }
+
+    public void ReplacePhaseOneSnapshot(ulong characterId, IEnumerable<OwnedItemRecord> snapshot)
+    {
+        this.currentCharacterId = characterId;
+        this.records.RemoveAll(item => !IsRetainerRecord(item));
+        this.records.AddRange(snapshot);
+        this.SortRecords();
+        this.Save();
+    }
+
+    public void ReplaceRetainerSnapshot(
+        ulong characterId,
+        ulong retainerId,
+        string retainerName,
+        IEnumerable<OwnedItemRecord> snapshot)
+    {
+        this.currentCharacterId = characterId;
+        var normalizedRetainerName = NormalizeRetainerName(retainerName);
+
+        this.records.RemoveAll(item => IsSameRetainerRecord(item, retainerId, normalizedRetainerName));
+        this.records.AddRange(snapshot);
+        this.SortRecords();
         this.Save();
     }
 
@@ -73,4 +98,45 @@ public sealed class OwnedItemRepository
         var directory = Path.Combine(Plugin.Instance.PluginInterface.ConfigDirectory.FullName, "owned-items");
         return Path.Combine(directory, $"{characterId:X16}.json");
     }
+
+    private void SortRecords()
+    {
+        this.records.Sort((left, right) =>
+        {
+            var sourceCompare = GetSourceSort(left).CompareTo(GetSourceSort(right));
+            if (sourceCompare != 0)
+                return sourceCompare;
+
+            var retainerCompare = string.Compare(left.RetainerName, right.RetainerName, StringComparison.OrdinalIgnoreCase);
+            if (retainerCompare != 0)
+                return retainerCompare;
+
+            var containerCompare = left.ContainerId.CompareTo(right.ContainerId);
+            return containerCompare != 0 ? containerCompare : left.Slot.CompareTo(right.Slot);
+        });
+    }
+
+    private static int GetSourceSort(OwnedItemRecord item)
+        => IsRetainerRecord(item) ? 1 : 0;
+
+    private static bool IsSameRetainerRecord(OwnedItemRecord item, ulong retainerId, string retainerName)
+    {
+        if (!IsRetainerRecord(item))
+            return false;
+
+        if (retainerId != 0 && item.RetainerId == retainerId)
+            return true;
+
+        return retainerId == 0
+               && string.Equals(NormalizeRetainerName(item.RetainerName), retainerName, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsRetainerRecord(OwnedItemRecord item)
+        => item.RetainerId != 0
+           || !string.IsNullOrWhiteSpace(item.RetainerName)
+           || item.SourceContainer.StartsWith("Retainer:", StringComparison.Ordinal)
+           || item.ContainerType.StartsWith("Retainer", StringComparison.Ordinal);
+
+    private static string NormalizeRetainerName(string retainerName)
+        => string.IsNullOrWhiteSpace(retainerName) ? "Unknown Retainer" : retainerName.Trim();
 }
