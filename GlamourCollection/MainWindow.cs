@@ -170,6 +170,8 @@ namespace Main
         private string searchText = string.Empty;
         private string cachedSearchText = string.Empty;
         private string cachedFilterKey = string.Empty;
+        private string tryOnStatusText = string.Empty;
+        private bool tryOnStatusIsError;
         private int cachedOwnershipVersion = -1;
 
         public MainWindow() : base(Plugin.Instance.Name)
@@ -253,7 +255,8 @@ namespace Main
             var activeFilterCount = this.filterService.GetActiveFilterCount(this.searchText, plugin.Configuration.Filters);
             ImGui.TextUnformatted($"Showing {filtered.Count} / {plugin.Ownership.ViewModels.Count} | 已拥有 {plugin.Ownership.OwnedItemCount} | 启用筛选 {activeFilterCount}");
 
-            DrawEquipmentTable(filtered);
+            this.DrawTryOnStatus();
+            this.DrawEquipmentTable(filtered);
         }
 
         private void DrawCollectionControls(Plugin plugin)
@@ -560,7 +563,7 @@ namespace Main
             return clicked;
         }
 
-        private static void DrawEquipmentTable(IReadOnlyList<EquipmentViewModel> items)
+        private void DrawEquipmentTable(IReadOnlyList<EquipmentViewModel> items)
         {
             const float rowHeight = 36f;
             var tableFlags = ImGuiTableFlags.Borders
@@ -590,15 +593,16 @@ namespace Main
             while (clipper.Step())
             {
                 for (var index = clipper.DisplayStart; index < clipper.DisplayEnd; index++)
-                    DrawEquipmentRow(items[index], rowHeight, iconSize);
+                    this.DrawEquipmentRow(items[index], rowHeight, iconSize);
             }
 
             ImGui.EndTable();
         }
 
-        private static void DrawEquipmentRow(EquipmentViewModel item, float rowHeight, float iconSize)
+        private void DrawEquipmentRow(EquipmentViewModel item, float rowHeight, float iconSize)
         {
             ImGui.TableNextRow(rowHeight);
+            var rowMinY = ImGui.GetCursorScreenPos().Y;
             var isHovered = false;
 
             ImGui.TableSetColumnIndex(0);
@@ -654,8 +658,39 @@ namespace Main
                 ImGui.TextDisabled("-");
             isHovered |= ImGui.IsItemHovered();
 
-            if (isHovered)
+            var rowHovered = IsCurrentTableRowHovered(rowMinY, rowHeight);
+            if (rowHovered && ImGui.IsMouseClicked(ImGuiMouseButton.Left))
+                this.TryOnEquipment(item);
+
+            if (isHovered || rowHovered)
                 DrawEquipmentTooltip(item);
+        }
+
+        private void TryOnEquipment(EquipmentViewModel item)
+        {
+            var result = Plugin.Instance.TryOn.TryOn(item);
+            this.tryOnStatusIsError = !result.Success;
+            this.tryOnStatusText = result.Success
+                ? $"试穿：{item.Item.Name}"
+                : result.ErrorMessage ?? "试穿失败。";
+        }
+
+        private void DrawTryOnStatus()
+        {
+            if (string.IsNullOrWhiteSpace(this.tryOnStatusText))
+                return;
+
+            var color = this.tryOnStatusIsError
+                ? new Vector4(0.95f, 0.32f, 0.28f, 1f)
+                : new Vector4(0.25f, 0.9f, 0.4f, 1f);
+            ImGui.TextColored(color, this.tryOnStatusText);
+        }
+
+        private static bool IsCurrentTableRowHovered(float rowMinY, float rowHeight)
+        {
+            var rowMin = new Vector2(ImGui.GetWindowPos().X, rowMinY);
+            var rowMax = new Vector2(rowMin.X + ImGui.GetWindowWidth(), rowMinY + rowHeight);
+            return ImGui.IsMouseHoveringRect(rowMin, rowMax, true);
         }
 
         private static string GetOwnedDisplayText(EquipmentViewModel item)
