@@ -98,7 +98,8 @@ public unsafe sealed class InventoryScanner(ItemDatabaseService itemDatabase)
         var retainerName = NormalizeRetainerName(retainer.Name);
         var records = new List<OwnedItemRecord>();
         var now = DateTimeOffset.UtcNow;
-        var isReadable = false;
+        var hasReadableContainers = false;
+        var nonEmptyItemCount = 0;
 
         itemDatabase.Load();
 
@@ -106,13 +107,14 @@ public unsafe sealed class InventoryScanner(ItemDatabaseService itemDatabase)
         {
             var items = Svc.GameInventory.GetInventoryItems(container);
             if (!items.IsEmpty)
-                isReadable = true;
+                hasReadableContainers = true;
 
             foreach (var inventoryItem in items)
             {
                 if (inventoryItem.IsEmpty)
                     continue;
 
+                nonEmptyItemCount++;
                 var rawItemId = inventoryItem.ItemId;
                 var baseItemId = inventoryItem.BaseItemId;
                 if (!itemDatabase.TryGetEquipment(baseItemId, out var equipment))
@@ -139,6 +141,8 @@ public unsafe sealed class InventoryScanner(ItemDatabaseService itemDatabase)
             }
         }
 
+        var itemCountMatches = retainer.ItemCount < 0 || nonEmptyItemCount == retainer.ItemCount;
+        var isReadable = hasReadableContainers && itemCountMatches;
         return new RetainerInventorySnapshot(retainer.Id, retainerName, isReadable, records);
     }
 
@@ -168,19 +172,19 @@ public unsafe sealed class InventoryScanner(ItemDatabaseService itemDatabase)
     {
         var manager = RetainerManager.Instance();
         if (manager == null)
-            return new RetainerIdentity(0, string.Empty);
+            return new RetainerIdentity(0, string.Empty, -1);
 
         var activeRetainer = manager->GetActiveRetainer();
         if (activeRetainer == null)
-            return new RetainerIdentity(manager->LastSelectedRetainerId, string.Empty);
+            return new RetainerIdentity(manager->LastSelectedRetainerId, string.Empty, -1);
 
-        return new RetainerIdentity(activeRetainer->RetainerId, activeRetainer->NameString);
+        return new RetainerIdentity(activeRetainer->RetainerId, activeRetainer->NameString, activeRetainer->ItemCount);
     }
 
     private static string NormalizeRetainerName(string retainerName)
         => string.IsNullOrWhiteSpace(retainerName) ? "Unknown Retainer" : retainerName.Trim();
 
-    private sealed record RetainerIdentity(ulong Id, string Name);
+    private sealed record RetainerIdentity(ulong Id, string Name, int ItemCount);
 }
 
 public sealed record RetainerInventorySnapshot(

@@ -137,7 +137,9 @@ namespace Main
                 RescanOwnedItems(InventoryWatcher.LastChangeReason);
 
             if (RetainerInventoryWatcher.ConsumeScanRequest())
-                ScanCurrentRetainerInventory(RetainerInventoryWatcher.LastScanReason);
+                ScanCurrentRetainerInventory(
+                    RetainerInventoryWatcher.LastScanReason,
+                    RetainerInventoryWatcher.LastScanWasSpeculative);
         }
 
         public void RescanOwnedItems(string reason = "手动扫描。")
@@ -166,7 +168,7 @@ namespace Main
             LastInventoryScanStatus = $"{reason} 已扫描 {snapshot.Count} 个装备位置。";
         }
 
-        private void ScanCurrentRetainerInventory(string reason = "Retainer inventory scan.")
+        private void ScanCurrentRetainerInventory(string reason = "Retainer inventory scan.", bool silentIfUnreadable = false)
         {
             if (!Svc.ClientState.IsLoggedIn || Svc.ClientState.LocalContentId == 0)
             {
@@ -186,7 +188,8 @@ namespace Main
             var snapshot = InventoryScanner.ScanCurrentRetainer(characterId, worldId);
             if (!snapshot.IsReadable)
             {
-                LastInventoryScanStatus = "Retainer inventory is not readable yet.";
+                if (!silentIfUnreadable)
+                    LastInventoryScanStatus = "Retainer inventory is not readable yet.";
                 return;
             }
 
@@ -195,6 +198,29 @@ namespace Main
 
             LastInventoryScanAt = DateTimeOffset.Now;
             LastInventoryScanStatus = $"{reason} {snapshot.RetainerName}: {snapshot.Records.Count} equipment locations.";
+        }
+
+        public void ClearRetainerInventoryCache()
+        {
+            if (!Svc.ClientState.IsLoggedIn || Svc.ClientState.LocalContentId == 0)
+            {
+                LastInventoryScanStatus = "Please log in before clearing retainer cache.";
+                LastInventoryScanAt = null;
+                return;
+            }
+
+            var characterId = Svc.ClientState.LocalContentId;
+            if (loadedCharacterId != characterId)
+            {
+                loadedCharacterId = characterId;
+                OwnedItems.Load(characterId);
+            }
+
+            var removed = OwnedItems.ClearRetainerSnapshots(characterId);
+            Ownership.Refresh();
+
+            LastInventoryScanAt = DateTimeOffset.Now;
+            LastInventoryScanStatus = $"Cleared {removed} retainer equipment cache records.";
         }
 
         #endregion

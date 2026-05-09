@@ -243,6 +243,10 @@ namespace Main
                 plugin.RescanOwnedItems();
 
             ImGui.SameLine();
+            if (ImGui.Button("清除雇员缓存"))
+                plugin.ClearRetainerInventoryCache();
+
+            ImGui.SameLine();
             ImGui.TextUnformatted(plugin.LastInventoryScanStatus);
 
             if (plugin.LastInventoryScanAt is { } lastScan)
@@ -283,8 +287,8 @@ namespace Main
             if (ImGui.Button("重置视图"))
                 ResetView(plugin);
 
-            ImGui.SetNextWindowSize(new Vector2(900f, 500f), ImGuiCond.Appearing);
-            if (ImGui.BeginPopup("##filterPopup"))
+            ImGui.SetNextWindowSize(new Vector2(900f, 680f), ImGuiCond.Always);
+            if (ImGui.BeginPopup("##filterPopup", ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoSavedSettings))
             {
                 DrawFilterPopup(plugin);
                 ImGui.EndPopup();
@@ -328,15 +332,6 @@ namespace Main
 
             DrawMultiCheckboxGroup("职业", "jobs", filters.SelectedJobs, config, false, TankJobChips, HealerJobChips, MeleeJobChips, RangedJobChips, CasterJobChips, CrafterGathererJobChips);
             DrawMultiCheckboxGroup("部位", "slots", filters.SelectedSlots, config, false, SlotChips);
-
-            if (ImGui.Button(filters.IsAdvancedFilterOpen ? "隐藏高级筛选" : "显示高级筛选"))
-            {
-                filters.IsAdvancedFilterOpen = !filters.IsAdvancedFilterOpen;
-                SaveFilterChange(config);
-            }
-
-            if (!filters.IsAdvancedFilterOpen)
-                return;
 
             DrawFilterSection("高级筛选", false);
             DrawMultiCheckboxGroup("资料片 / 大版本", "expansions", filters.SelectedExpansions, config, true, ExpansionChips);

@@ -74,6 +74,19 @@ public sealed class OwnedItemRepository
         this.Save();
     }
 
+    public int ClearRetainerSnapshots(ulong characterId)
+    {
+        this.currentCharacterId = characterId;
+        var removed = this.records.RemoveAll(IsRetainerRecord);
+        if (removed > 0)
+        {
+            this.SortRecords();
+            this.Save();
+        }
+
+        return removed;
+    }
+
     public IReadOnlyList<OwnedItemRecord> FindByItemId(uint itemId)
         => this.records.Where(item => item.ItemId == itemId).ToList();
 
