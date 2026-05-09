@@ -55,6 +55,7 @@ public enum EquipSlotFilter
 
 public enum ExpansionCategory
 {
+    Unknown = 0,
     ARealmReborn = 1,
     Heavensward = 2,
     Stormblood = 3,
@@ -78,4 +79,8 @@ public enum SourceCategory
     Quest = 11,
     MogStation = 12,
     Unknown = 13,
+    DeepDungeon = 14,
+    FieldOperation = 15,
+    TreasureMap = 16,
+    Other = 17,
 }

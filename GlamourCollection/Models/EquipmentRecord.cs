@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+
 namespace Main.Models;
 
 public sealed record EquipmentRecord(
@@ -10,6 +12,10 @@ public sealed record EquipmentRecord(
     uint ItemLevel,
     bool CanBeDyed,
     string SourceInfo,
+    IReadOnlyList<SourceCategory> SourceCategories,
+    ExpansionCategory Expansion,
+    string ExpansionInfo,
+    bool IsExpansionEstimated,
     uint ItemUICategoryId,
     uint EquipSlotCategoryId,
     ulong ModelMain,

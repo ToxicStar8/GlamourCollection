@@ -35,6 +35,7 @@ public sealed class ItemDatabaseService(SourceInfoService sourceInfo)
             if (string.IsNullOrWhiteSpace(name))
                 continue;
 
+            var itemSourceInfo = sourceInfo.GetSourceInfo(item);
             var record = new EquipmentRecord(
                 item.RowId,
                 name,
@@ -44,7 +45,11 @@ public sealed class ItemDatabaseService(SourceInfoService sourceInfo)
                 item.LevelEquip,
                 item.LevelItem.RowId,
                 item.DyeCount > 0,
-                sourceInfo.GetSourceInfo(item),
+                itemSourceInfo.Text,
+                itemSourceInfo.Categories,
+                itemSourceInfo.Expansion,
+                itemSourceInfo.ExpansionText,
+                itemSourceInfo.IsExpansionEstimated,
                 item.ItemUICategory.RowId,
                 item.EquipSlotCategory.RowId,
                 item.ModelMain,

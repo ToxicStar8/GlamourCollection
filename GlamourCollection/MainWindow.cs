@@ -67,6 +67,7 @@ namespace Main
 
         private static readonly (int Value, string Label)[] ExpansionChips =
         [
+            ((int)ExpansionCategory.Unknown, "未知大版本"),
             ((int)ExpansionCategory.ARealmReborn, "2.x 新生"),
             ((int)ExpansionCategory.Heavensward, "3.x 苍穹"),
             ((int)ExpansionCategory.Stormblood, "4.x 红莲"),
@@ -89,6 +90,10 @@ namespace Main
             ((int)SourceCategory.Achievement, "成就奖励"),
             ((int)SourceCategory.Quest, "任务奖励"),
             ((int)SourceCategory.MogStation, "莫古站 / 付费商城"),
+            ((int)SourceCategory.DeepDungeon, "深层迷宫"),
+            ((int)SourceCategory.FieldOperation, "特殊探索区域"),
+            ((int)SourceCategory.TreasureMap, "藏宝图"),
+            ((int)SourceCategory.Other, "其他来源"),
             ((int)SourceCategory.Unknown, "未知来源"),
         ];
 
@@ -346,7 +351,7 @@ namespace Main
             DrawMultiCheckboxGroup("部位", "slots", filters.SelectedSlots, config, false, SlotChips);
 
             DrawFilterSection("高级筛选", false);
-            DrawMultiCheckboxGroup("资料片 / 大版本", "expansions", filters.SelectedExpansions, config, true, ExpansionChips);
+            DrawMultiCheckboxGroup("大版本", "expansions", filters.SelectedExpansions, config, true, ExpansionChips);
             DrawMultiCheckboxGroup("来源类型", "sources", filters.SelectedSourceCategories, config, true, SourceChips);
 
             DrawSingleCheckboxGroup("品质", "quality", QualityChips, filters.QualityFilter, value =>
@@ -756,6 +761,7 @@ namespace Main
             ImGui.TextUnformatted($"装备等级: {item.Item.EquipLevel}");
             ImGui.TextUnformatted($"物品等级: {item.Item.ItemLevel}");
             ImGui.TextUnformatted($"可染色: {(item.Item.CanBeDyed ? "是" : "否")}");
+            ImGui.TextUnformatted($"大版本: {item.Item.ExpansionInfo}");
             ImGui.TextUnformatted($"来源: {item.Item.SourceInfo}");
             ImGui.TextUnformatted($"拥有: {(item.IsOwned ? GetOwnedDisplayText(item) : "-")}");
 

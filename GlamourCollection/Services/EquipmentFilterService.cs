@@ -121,7 +121,7 @@ public sealed class EquipmentFilterService
             query = query.Where(item => item.AppearanceItems.Any(appearanceItem => filters.SelectedExpansions.Contains((int)GetExpansion(appearanceItem))));
 
         if (filters.SelectedSourceCategories.Count > 0)
-            query = query.Where(item => item.AppearanceItems.Any(appearanceItem => filters.SelectedSourceCategories.Contains((int)GetSourceCategory(appearanceItem))));
+            query = query.Where(item => item.AppearanceItems.Any(appearanceItem => MatchesSourceCategory(appearanceItem, filters.SelectedSourceCategories)));
 
         if (filters.EquipLevelMin > 0)
             query = query.Where(item => item.AppearanceItems.Any(appearanceItem => appearanceItem.EquipLevel >= filters.EquipLevelMin));
@@ -153,21 +153,10 @@ public sealed class EquipmentFilterService
         };
 
     private static ExpansionCategory GetExpansion(EquipmentRecord item)
-        => item.EquipLevel switch
-        {
-            <= 50 => ExpansionCategory.ARealmReborn,
-            <= 60 => ExpansionCategory.Heavensward,
-            <= 70 => ExpansionCategory.Stormblood,
-            <= 80 => ExpansionCategory.Shadowbringers,
-            <= 90 => ExpansionCategory.Endwalker,
-            _ => ExpansionCategory.Dawntrail,
-        };
+        => item.Expansion;
 
-    private static SourceCategory GetSourceCategory(EquipmentRecord item)
-        => item.SourceInfo.Equals("Unknown", StringComparison.OrdinalIgnoreCase)
-           || item.SourceInfo.Equals("未知来源", StringComparison.OrdinalIgnoreCase)
-            ? SourceCategory.Unknown
-            : SourceCategory.Unknown;
+    private static bool MatchesSourceCategory(EquipmentRecord item, IReadOnlyCollection<int> selectedSourceCategories)
+        => item.SourceCategories.Any(category => selectedSourceCategories.Contains((int)category));
 
     private static bool MatchesJob(EquipmentRecord item, JobFilter job)
     {
