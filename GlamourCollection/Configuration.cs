@@ -26,10 +26,23 @@ namespace Main
         public int EquipmentDyeFilter { get; set; } = (int)Main.Models.EquipmentDyeFilter.All;
         public int EquipmentSortMode { get; set; } = (int)Main.Models.EquipmentSortMode.Name;
         public bool EquipmentSortDescending { get; set; } = false;
+        public FilterState Filters { get; set; } = new();
 
         public void Init()
         {
+            this.Filters ??= new FilterState();
+            this.Filters.EnsureLists();
 
+            if (this.Filters.Version != 0)
+                return;
+
+            this.Filters.OwnershipFilter = this.EquipmentOwnershipFilter;
+            this.Filters.QualityFilter = this.EquipmentQualityFilter;
+            this.Filters.SameModelFilter = this.EquipmentSameModelFilter;
+            this.Filters.DyeFilter = this.EquipmentDyeFilter;
+            this.Filters.SortMode = this.EquipmentSortMode;
+            this.Filters.SortDescending = this.EquipmentSortDescending;
+            this.Filters.Version = 1;
         }
 
         public void Save()
