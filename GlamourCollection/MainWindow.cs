@@ -222,17 +222,17 @@ namespace Main
                 }
 
                 ImGui.Separator();
-                ImGui.TextUnformatted("游戏道具悬浮提示");
+                ImGui.TextUnformatted("拥有标识");
 
                 var showHoveredItemOwnershipOverlay = config.ShowHoveredItemOwnershipOverlay;
-                if (ImGui.Checkbox("在游戏道具悬浮时显示拥有标识", ref showHoveredItemOwnershipOverlay))
+                if (ImGui.Checkbox("显示拥有标识", ref showHoveredItemOwnershipOverlay))
                 {
                     config.ShowHoveredItemOwnershipOverlay = showHoveredItemOwnershipOverlay;
                     config.Save();
                 }
 
                 var hoveredItemOwnershipUseSameModel = config.HoveredItemOwnershipUseSameModel;
-                if (ImGui.Checkbox("悬浮提示计算同模装备", ref hoveredItemOwnershipUseSameModel))
+                if (ImGui.Checkbox("计算同模装备", ref hoveredItemOwnershipUseSameModel))
                 {
                     config.HoveredItemOwnershipUseSameModel = hoveredItemOwnershipUseSameModel;
                     config.Save();
@@ -244,6 +244,7 @@ namespace Main
             if (ImGui.BeginTabItem(Lang.About))
             {
                 ImGui.Text("当前为早期测试版本，开发中");
+                ImGui.Text("首次使用时，需先打开雇员/鸟包/幻化柜/收藏柜，才可获取缓存数据");
 
                 if (ImGui.Button(Lang.SendIssue))
                 {
