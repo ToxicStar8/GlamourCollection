@@ -167,6 +167,7 @@ namespace Main
 
         private readonly EquipmentFilterService filterService = new();
         private readonly List<EquipmentViewModel> filteredItems = [];
+        private const float FilterLabelWidth = 150f;
         private string searchText = string.Empty;
         private string cachedSearchText = string.Empty;
         private string cachedFilterKey = string.Empty;
@@ -264,30 +265,53 @@ namespace Main
             var config = plugin.Configuration;
             var filters = config.Filters;
             filters.EnsureLists();
+            var activeFilterCount = this.filterService.GetActiveFilterCount(this.searchText, filters);
 
-            if (ImGui.Button(filters.IsFilterPanelOpen ? "隐藏筛选" : "显示筛选"))
-            {
-                filters.IsFilterPanelOpen = !filters.IsFilterPanelOpen;
-                SaveFilterChange(config);
-            }
+            ImGui.SetNextItemWidth(Math.Max(220f, Math.Min(420f, ImGui.GetContentRegionAvail().X * 0.42f)));
+            if (ImGui.InputText("搜索##search", ref searchText, 128))
+                InvalidateFilterCache();
 
             ImGui.SameLine();
-            if (ImGui.Button("Clear All Filters"))
+            if (ImGui.Button($"筛选 ({activeFilterCount})##openFilters"))
+                ImGui.OpenPopup("##filterPopup");
+
+            ImGui.SameLine();
+            if (ImGui.Button("清空筛选"))
                 ClearAllFilters(config);
 
             ImGui.SameLine();
-            if (ImGui.Button("Reset View"))
+            if (ImGui.Button("重置视图"))
                 ResetView(plugin);
 
-            if (!filters.IsFilterPanelOpen)
+            ImGui.SetNextWindowSize(new Vector2(900f, 500f), ImGuiCond.Appearing);
+            if (ImGui.BeginPopup("##filterPopup"))
             {
-                ImGui.Spacing();
-                return;
+                DrawFilterPopup(plugin);
+                ImGui.EndPopup();
             }
 
             ImGui.Spacing();
-            DrawFilterSection("显示", false);
-            DrawSingleChipGrid("display", DisplayModeChips, config.EquipmentDisplayMode, value =>
+        }
+
+        private void DrawFilterPopup(Plugin plugin)
+        {
+            var config = plugin.Configuration;
+            var filters = config.Filters;
+            filters.EnsureLists();
+
+            ImGui.TextUnformatted("筛选");
+            ImGui.SameLine();
+            ImGui.TextDisabled($"{this.filterService.GetActiveFilterCount(this.searchText, filters)} 个已启用");
+
+            if (ImGui.SmallButton("清空全部##popupClearFilters"))
+                ClearAllFilters(config);
+
+            ImGui.SameLine();
+            if (ImGui.SmallButton("关闭##closeFilterPopup"))
+                ImGui.CloseCurrentPopup();
+
+            DrawFilterSection("基础", false);
+            DrawSingleCheckboxGroup("显示", "display", DisplayModeChips, config.EquipmentDisplayMode, value =>
             {
                 config.EquipmentDisplayMode = value;
                 config.Save();
@@ -296,18 +320,14 @@ namespace Main
             }, allowToggleOff: false);
 
             DrawFilterSection("常用筛选", false);
-            ImGui.SetNextItemWidth(Math.Max(260f, ImGui.GetContentRegionAvail().X * 0.45f));
-            if (ImGui.InputText("搜索##search", ref searchText, 128))
-                InvalidateFilterCache();
-
-            DrawSingleChipGrid("ownership", OwnershipChips, filters.OwnershipFilter, value =>
+            DrawSingleCheckboxGroup("拥有状态", "ownership", OwnershipChips, filters.OwnershipFilter, value =>
             {
                 filters.OwnershipFilter = value;
                 SaveFilterChange(config);
             });
 
-            DrawMultiChipGroup("职业", "jobs", filters.SelectedJobs, config, false, TankJobChips, HealerJobChips, MeleeJobChips, RangedJobChips, CasterJobChips, CrafterGathererJobChips);
-            DrawMultiChipGroup("部位", "slots", filters.SelectedSlots, config, false, SlotChips);
+            DrawMultiCheckboxGroup("职业", "jobs", filters.SelectedJobs, config, false, TankJobChips, HealerJobChips, MeleeJobChips, RangedJobChips, CasterJobChips, CrafterGathererJobChips);
+            DrawMultiCheckboxGroup("部位", "slots", filters.SelectedSlots, config, false, SlotChips);
 
             if (ImGui.Button(filters.IsAdvancedFilterOpen ? "隐藏高级筛选" : "显示高级筛选"))
             {
@@ -315,35 +335,33 @@ namespace Main
                 SaveFilterChange(config);
             }
 
-            if (filters.IsAdvancedFilterOpen)
+            if (!filters.IsAdvancedFilterOpen)
+                return;
+
+            DrawFilterSection("高级筛选", false);
+            DrawMultiCheckboxGroup("资料片 / 大版本", "expansions", filters.SelectedExpansions, config, true, ExpansionChips);
+            DrawMultiCheckboxGroup("来源类型", "sources", filters.SelectedSourceCategories, config, true, SourceChips);
+
+            DrawSingleCheckboxGroup("品质", "quality", QualityChips, filters.QualityFilter, value =>
             {
-                DrawFilterSection("高级筛选", false);
-                DrawMultiChipGroup("资料片 / 大版本", "expansions", filters.SelectedExpansions, config, true, ExpansionChips);
-                DrawMultiChipGroup("来源类型", "sources", filters.SelectedSourceCategories, config, true, SourceChips);
+                filters.QualityFilter = value;
+                SaveFilterChange(config);
+            });
 
-                DrawSingleChipGrid("quality", QualityChips, filters.QualityFilter, value =>
-                {
-                    filters.QualityFilter = value;
-                    SaveFilterChange(config);
-                });
+            DrawSingleCheckboxGroup("染色", "dye", DyeChips, filters.DyeFilter, value =>
+            {
+                filters.DyeFilter = value;
+                SaveFilterChange(config);
+            });
 
-                DrawSingleChipGrid("dye", DyeChips, filters.DyeFilter, value =>
-                {
-                    filters.DyeFilter = value;
-                    SaveFilterChange(config);
-                });
+            DrawSingleCheckboxGroup("同模", "sameModel", SameModelChips, filters.SameModelFilter, value =>
+            {
+                filters.SameModelFilter = value;
+                SaveFilterChange(config);
+            });
 
-                DrawSingleChipGrid("sameModel", SameModelChips, filters.SameModelFilter, value =>
-                {
-                    filters.SameModelFilter = value;
-                    SaveFilterChange(config);
-                });
-
-                DrawLevelRanges(filters, config);
-                DrawSortControls(filters, config);
-            }
-
-            ImGui.Spacing();
+            DrawLevelRanges(filters, config);
+            DrawSortControls(filters, config);
         }
 
         private static void DrawFilterSection(string label, bool sameLine)
@@ -394,14 +412,17 @@ namespace Main
             InvalidateFilterCache();
         }
 
-        private void DrawSingleChipGrid(
+        private void DrawSingleCheckboxGroup(
+            string label,
             string id,
-            IReadOnlyList<(int Value, string Label)> chips,
+            IReadOnlyList<(int Value, string Label)> options,
             int currentValue,
             Action<int> setValue,
             bool allowToggleOff = true)
         {
-            DrawChipGrid(id, chips, value => currentValue == value, value =>
+            ImGui.Spacing();
+            DrawInlineFilterLabel(label, false, id, null);
+            DrawCheckboxGrid(id, options, value => currentValue == value, value =>
             {
                 if (allowToggleOff && currentValue == value && value != 0)
                     setValue(0);
@@ -410,7 +431,7 @@ namespace Main
             });
         }
 
-        private void DrawMultiChipGroup(
+        private void DrawMultiCheckboxGroup(
             string label,
             string id,
             List<int> selectedValues,
@@ -419,6 +440,23 @@ namespace Main
             params (int Value, string Label)[][] groups)
         {
             ImGui.Spacing();
+            if (groups.Length == 1)
+            {
+                DrawInlineFilterLabel(label, selectedValues.Count > 0, id, () =>
+                {
+                    selectedValues.Clear();
+                    SaveFilterChange(config);
+                });
+
+                DrawCheckboxGrid($"{id}_0_{advanced}", groups[0], selectedValues.Contains, value =>
+                {
+                    if (!selectedValues.Remove(value))
+                        selectedValues.Add(value);
+                    SaveFilterChange(config);
+                });
+                return;
+            }
+
             ImGui.TextUnformatted(label);
             if (selectedValues.Count > 0)
             {
@@ -433,40 +471,39 @@ namespace Main
             var groupIndex = 0;
             foreach (var group in groups)
             {
-                if (groups.Length > 1)
-                {
-                    ImGui.TextDisabled(GetJobGroupLabel(groupIndex));
-                    groupIndex++;
-                }
+                DrawInlineFilterLabel(GetJobGroupLabel(groupIndex), false, $"{id}_{groupIndex}", null);
 
-                DrawChipGrid($"{id}_{groupIndex}_{advanced}", group, selectedValues.Contains, value =>
+                DrawCheckboxGrid($"{id}_{groupIndex}_{advanced}", group, selectedValues.Contains, value =>
                 {
                     if (!selectedValues.Remove(value))
                         selectedValues.Add(value);
                     SaveFilterChange(config);
                 });
+
+                groupIndex++;
             }
         }
 
         private void DrawLevelRanges(FilterState filters, Configuration config)
         {
             ImGui.Spacing();
-            ImGui.TextUnformatted("等级范围");
+            DrawInlineFilterLabel("等级范围", false, "levels", null);
 
             var equipMin = filters.EquipLevelMin;
             var equipMax = filters.EquipLevelMax;
-            ImGui.SetNextItemWidth(90f);
-            var changed = ImGui.InputInt("装备等级 Min", ref equipMin);
+            ImGui.SetNextItemWidth(72f);
+            var changed = ImGui.InputInt("装等 Min", ref equipMin);
             ImGui.SameLine();
-            ImGui.SetNextItemWidth(90f);
+            ImGui.SetNextItemWidth(72f);
             changed |= ImGui.InputInt("Max##equipLevelMax", ref equipMax);
 
             var itemMin = filters.ItemLevelMin;
             var itemMax = filters.ItemLevelMax;
-            ImGui.SetNextItemWidth(90f);
-            changed |= ImGui.InputInt("物品等级 Min", ref itemMin);
             ImGui.SameLine();
-            ImGui.SetNextItemWidth(90f);
+            ImGui.SetNextItemWidth(72f);
+            changed |= ImGui.InputInt("品级 Min", ref itemMin);
+            ImGui.SameLine();
+            ImGui.SetNextItemWidth(72f);
             changed |= ImGui.InputInt("Max##itemLevelMax", ref itemMax);
 
             if (changed)
@@ -482,8 +519,7 @@ namespace Main
         private void DrawSortControls(FilterState filters, Configuration config)
         {
             ImGui.Spacing();
-            ImGui.TextUnformatted("排序");
-            DrawSingleChipGrid("sort", SortChips, filters.SortMode, value =>
+            DrawSingleCheckboxGroup("排序", "sort", SortChips, filters.SortMode, value =>
             {
                 filters.SortMode = value;
                 SaveFilterChange(config);
@@ -508,9 +544,24 @@ namespace Main
                 _ => "生产采集",
             };
 
-        private static void DrawChipGrid(
+        private static void DrawInlineFilterLabel(string label, bool showClear, string id, Action? onClear)
+        {
+            ImGui.AlignTextToFramePadding();
+            ImGui.TextUnformatted(label);
+
+            if (showClear && onClear != null)
+            {
+                ImGui.SameLine();
+                if (ImGui.SmallButton($"清空##clear_{id}"))
+                    onClear();
+            }
+
+            ImGui.SameLine(FilterLabelWidth);
+        }
+
+        private static void DrawCheckboxGrid(
             string id,
-            IReadOnlyList<(int Value, string Label)> chips,
+            IReadOnlyList<(int Value, string Label)> options,
             Func<int, bool> isSelected,
             Action<int> onClick)
         {
@@ -520,9 +571,12 @@ namespace Main
             var lineX = startX;
             var first = true;
 
-            foreach (var chip in chips)
+            foreach (var option in options)
             {
-                var width = ImGui.CalcTextSize(chip.Label).X + style.FramePadding.X * 2f + 2f;
+                var width = ImGui.GetFrameHeight()
+                            + style.ItemInnerSpacing.X
+                            + ImGui.CalcTextSize(option.Label).X
+                            + style.ItemSpacing.X;
                 if (!first)
                 {
                     if (lineX + style.ItemSpacing.X + width <= rightX)
@@ -536,31 +590,15 @@ namespace Main
                     }
                 }
 
-                if (DrawChip($"{id}_{chip.Value}", chip.Label, isSelected(chip.Value)))
-                    onClick(chip.Value);
+                var selected = isSelected(option.Value);
+                if (ImGui.Checkbox($"{option.Label}##{id}_{option.Value}", ref selected))
+                    onClick(option.Value);
 
                 lineX += width;
                 first = false;
             }
 
             ImGui.Spacing();
-        }
-
-        private static bool DrawChip(string id, string label, bool selected)
-        {
-            if (selected)
-            {
-                ImGui.PushStyleColor(ImGuiCol.Button, new Vector4(0.18f, 0.42f, 0.72f, 1f));
-                ImGui.PushStyleColor(ImGuiCol.ButtonHovered, new Vector4(0.24f, 0.52f, 0.85f, 1f));
-                ImGui.PushStyleColor(ImGuiCol.ButtonActive, new Vector4(0.15f, 0.34f, 0.62f, 1f));
-            }
-
-            var clicked = ImGui.Button($"{label}##{id}");
-
-            if (selected)
-                ImGui.PopStyleColor(3);
-
-            return clicked;
         }
 
         private void DrawEquipmentTable(IReadOnlyList<EquipmentViewModel> items)
@@ -602,17 +640,21 @@ namespace Main
         private void DrawEquipmentRow(EquipmentViewModel item, float rowHeight, float iconSize)
         {
             ImGui.TableNextRow(rowHeight);
-            var rowMinY = ImGui.GetCursorScreenPos().Y;
             var isHovered = false;
+            var tryOnHovered = false;
 
             ImGui.TableSetColumnIndex(0);
             DrawItemIcon(item.Item.IconId, iconSize);
-            isHovered |= ImGui.IsItemHovered();
+            var iconHovered = ImGui.IsItemHovered();
+            isHovered |= iconHovered;
+            tryOnHovered |= iconHovered;
 
             ImGui.TableSetColumnIndex(1);
             ImGui.AlignTextToFramePadding();
             ImGui.TextUnformatted(item.Item.Name);
-            isHovered |= ImGui.IsItemHovered();
+            var nameHovered = ImGui.IsItemHovered();
+            isHovered |= nameHovered;
+            tryOnHovered |= nameHovered;
 
             ImGui.TableSetColumnIndex(2);
             ImGui.AlignTextToFramePadding();
@@ -658,11 +700,10 @@ namespace Main
                 ImGui.TextDisabled("-");
             isHovered |= ImGui.IsItemHovered();
 
-            var rowHovered = IsCurrentTableRowHovered(rowMinY, rowHeight);
-            if (rowHovered && ImGui.IsMouseClicked(ImGuiMouseButton.Left))
+            if (tryOnHovered && ImGui.IsMouseClicked(ImGuiMouseButton.Left))
                 this.TryOnEquipment(item);
 
-            if (isHovered || rowHovered)
+            if (isHovered)
                 DrawEquipmentTooltip(item);
         }
 
@@ -684,13 +725,6 @@ namespace Main
                 ? new Vector4(0.95f, 0.32f, 0.28f, 1f)
                 : new Vector4(0.25f, 0.9f, 0.4f, 1f);
             ImGui.TextColored(color, this.tryOnStatusText);
-        }
-
-        private static bool IsCurrentTableRowHovered(float rowMinY, float rowHeight)
-        {
-            var rowMin = new Vector2(ImGui.GetWindowPos().X, rowMinY);
-            var rowMax = new Vector2(rowMin.X + ImGui.GetWindowWidth(), rowMinY + rowHeight);
-            return ImGui.IsMouseHoveringRect(rowMin, rowMax, true);
         }
 
         private static string GetOwnedDisplayText(EquipmentViewModel item)
@@ -749,25 +783,19 @@ namespace Main
 
         private static void DrawSameModelList(EquipmentViewModel item)
         {
-            var listHeight = GetTooltipListHeight(item.AppearanceItemCount, 14);
-            if (ImGui.BeginChild("##sameModelTooltipList", new Vector2(640f, listHeight), true))
+            foreach (var appearanceItem in item.AppearanceItems)
             {
-                foreach (var appearanceItem in item.AppearanceItems)
-                {
-                    var locations = item.OwnedLocations
-                        .Where(location => GetOwnedBaseItemId(location) == appearanceItem.ItemId)
-                        .ToList();
-                    var ownedText = locations.Count > 0 ? GetOwnedQualityText(locations) : "-";
-                    var line = $"{ownedText} {appearanceItem.Name} ({appearanceItem.ItemId})";
+                var locations = item.OwnedLocations
+                    .Where(location => GetOwnedBaseItemId(location) == appearanceItem.ItemId)
+                    .ToList();
+                var ownedText = locations.Count > 0 ? GetOwnedQualityText(locations) : "-";
+                var line = $"{ownedText} {appearanceItem.Name} ({appearanceItem.ItemId})";
 
-                    if (locations.Count > 0)
-                        ImGui.TextColored(new Vector4(0.25f, 0.9f, 0.4f, 1f), line);
-                    else
-                        ImGui.TextDisabled(line);
-                }
+                if (locations.Count > 0)
+                    ImGui.TextColored(new Vector4(0.25f, 0.9f, 0.4f, 1f), line);
+                else
+                    ImGui.TextDisabled(line);
             }
-
-            ImGui.EndChild();
         }
 
         private static float GetTooltipListHeight(int itemCount, int maxVisibleRows)
