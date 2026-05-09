@@ -49,6 +49,7 @@ namespace Main
             ArmoireInventoryWatcher = new ArmoireInventoryWatcher();
             Ownership = new OwnershipService(ItemDatabase, OwnedItems, Configuration);
             TryOn = new TryOnService();
+            HoveredItemOwnershipOverlay = new HoveredItemOwnershipOverlay(Configuration, ItemDatabase, OwnedItems);
             Ownership.Refresh();
             //窗口类
             _mainWindow = new MainWindow();
@@ -79,6 +80,7 @@ namespace Main
         private void DrawUI()
         {
             _windowSystem.Draw();
+            HoveredItemOwnershipOverlay.Draw();
         }
 
         /// <summary>

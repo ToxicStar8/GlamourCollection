@@ -221,6 +221,23 @@ namespace Main
                     config.Save();
                 }
 
+                ImGui.Separator();
+                ImGui.TextUnformatted("游戏道具悬浮提示");
+
+                var showHoveredItemOwnershipOverlay = config.ShowHoveredItemOwnershipOverlay;
+                if (ImGui.Checkbox("在游戏道具悬浮时显示拥有标识", ref showHoveredItemOwnershipOverlay))
+                {
+                    config.ShowHoveredItemOwnershipOverlay = showHoveredItemOwnershipOverlay;
+                    config.Save();
+                }
+
+                var hoveredItemOwnershipUseSameModel = config.HoveredItemOwnershipUseSameModel;
+                if (ImGui.Checkbox("悬浮提示计算同模装备", ref hoveredItemOwnershipUseSameModel))
+                {
+                    config.HoveredItemOwnershipUseSameModel = hoveredItemOwnershipUseSameModel;
+                    config.Save();
+                }
+
                 ImGui.EndTabItem();
             }
 
@@ -618,9 +635,12 @@ namespace Main
             const float rowHeight = 36f;
             var tableFlags = ImGuiTableFlags.Borders
                              | ImGuiTableFlags.RowBg
+                             | ImGuiTableFlags.Resizable
+                             | ImGuiTableFlags.Reorderable
+                             | ImGuiTableFlags.Hideable
                              | ImGuiTableFlags.ScrollY
                              | ImGuiTableFlags.ScrollX
-                             | ImGuiTableFlags.SizingStretchProp;
+                             | ImGuiTableFlags.SizingFixedFit;
 
             var tableHeight = Math.Max(160f, ImGui.GetContentRegionAvail().Y);
             if (!ImGui.BeginTable("##equipmentList", 9, tableFlags, new Vector2(-1, tableHeight)))
@@ -633,7 +653,7 @@ namespace Main
             ImGui.TableSetupColumn("装等", ImGuiTableColumnFlags.WidthFixed, 56f);
             ImGui.TableSetupColumn("品级", ImGuiTableColumnFlags.WidthFixed, 56f);
             ImGui.TableSetupColumn("可染", ImGuiTableColumnFlags.WidthFixed, 56f);
-            ImGui.TableSetupColumn("来源", ImGuiTableColumnFlags.WidthFixed, 120f);
+            ImGui.TableSetupColumn("来源", ImGuiTableColumnFlags.WidthFixed, 420f);
             ImGui.TableSetupColumn("同模", ImGuiTableColumnFlags.WidthFixed, 64f);
             ImGui.TableSetupColumn("拥有", ImGuiTableColumnFlags.WidthFixed, 124f);
             ImGui.TableHeadersRow();
@@ -788,67 +808,10 @@ namespace Main
             if (ImGui.BeginChild("##ownedLocationTooltipList", new Vector2(560f, listHeight), true))
             {
                 foreach (var location in locations)
-                    ImGui.TextUnformatted($"{GetOwnedQualityText([location])} {GetOwnedLocationSourceText(location)} / 格子 {location.Slot}");
+                    ImGui.TextUnformatted($"{GetOwnedQualityText([location])} {OwnedLocationFormatter.Format(location)}");
             }
 
             ImGui.EndChild();
-        }
-
-        private static string GetOwnedLocationSourceText(OwnedItemRecord location)
-        {
-            if (!string.IsNullOrWhiteSpace(location.RetainerName) || location.RetainerId != 0)
-                return $"雇员: {NormalizeRetainerLocationName(location)}";
-
-            var source = location.SourceContainer;
-            if (source.StartsWith("Retainer:", StringComparison.Ordinal))
-                return $"雇员: {source["Retainer:".Length..].Trim()}";
-
-            return source switch
-            {
-                "Inventory 1" => "背包 1",
-                "Inventory 2" => "背包 2",
-                "Inventory 3" => "背包 3",
-                "Inventory 4" => "背包 4",
-                "Equipped" => "已装备",
-                "Armoury Main Hand" => "军械库 主手",
-                "Armoury Off Hand" => "军械库 副手",
-                "Armoury Head" => "军械库 头部",
-                "Armoury Body" => "军械库 身体",
-                "Armoury Hands" => "军械库 手部",
-                "Armoury Legs" => "军械库 腿部",
-                "Armoury Feet" => "军械库 脚部",
-                "Armoury Earrings" => "军械库 耳饰",
-                "Armoury Necklace" => "军械库 项链",
-                "Armoury Bracelet" => "军械库 手镯",
-                "Armoury Rings" => "军械库 戒指",
-                "Saddlebag" => "陆行鸟背包",
-                "Premium Saddlebag" => "高级陆行鸟背包",
-                "Glamour Dresser" => "幻化柜",
-                "Armoire" => "收藏柜",
-                _ => source,
-            };
-        }
-
-        private static string NormalizeRetainerLocationName(OwnedItemRecord location)
-        {
-            if (!string.IsNullOrWhiteSpace(location.RetainerName))
-                return location.RetainerName.Trim();
-
-            if (location.SourceContainer.StartsWith("Retainer:", StringComparison.Ordinal))
-            {
-                var name = location.SourceContainer["Retainer:".Length..].Trim();
-                if (!string.IsNullOrWhiteSpace(name))
-                    return name;
-            }
-
-            if (location.SourceContainer.StartsWith("雇员:", StringComparison.Ordinal))
-            {
-                var name = location.SourceContainer["雇员:".Length..].Trim();
-                if (!string.IsNullOrWhiteSpace(name))
-                    return name;
-            }
-
-            return "未知雇员";
         }
 
         private static void DrawSameModelList(EquipmentViewModel item)

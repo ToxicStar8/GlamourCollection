@@ -26,6 +26,8 @@ namespace Main
         public int EquipmentDyeFilter { get; set; } = (int)Main.Models.EquipmentDyeFilter.All;
         public int EquipmentSortMode { get; set; } = (int)Main.Models.EquipmentSortMode.Name;
         public bool EquipmentSortDescending { get; set; } = false;
+        public bool ShowHoveredItemOwnershipOverlay { get; set; } = true;
+        public bool HoveredItemOwnershipUseSameModel { get; set; } = false;
         public FilterState Filters { get; set; } = new();
 
         public void Init()

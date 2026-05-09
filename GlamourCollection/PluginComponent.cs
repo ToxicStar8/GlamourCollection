@@ -38,6 +38,7 @@ namespace Main
         public ArmoireInventoryWatcher ArmoireInventoryWatcher { get; private set; } = null!;
         public OwnershipService Ownership { get; private set; } = null!;
         public ITryOnService TryOn { get; private set; } = null!;
+        public HoveredItemOwnershipOverlay HoveredItemOwnershipOverlay { get; private set; } = null!;
         public DateTimeOffset? LastInventoryScanAt { get; private set; }
         public string LastInventoryScanStatus { get; private set; } = "等待角色登录。";
         //自己
