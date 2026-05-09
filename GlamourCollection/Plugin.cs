@@ -44,6 +44,7 @@ namespace Main
             InventoryScanner = new InventoryScanner(ItemDatabase);
             InventoryWatcher = new InventoryWatcher();
             RetainerInventoryWatcher = new RetainerInventoryWatcher();
+            SaddlebagInventoryWatcher = new SaddlebagInventoryWatcher();
             Ownership = new OwnershipService(ItemDatabase, OwnedItems, Configuration);
             TryOn = new TryOnService();
             Ownership.Refresh();
@@ -102,6 +103,7 @@ namespace Main
             loadedCharacterId = 0;
             InventoryWatcher.ClearPending();
             RetainerInventoryWatcher.ClearPending();
+            SaddlebagInventoryWatcher.ClearPending();
             OwnedItems.Clear();
             Ownership.Refresh();
             LastInventoryScanStatus = "等待角色登录。";
@@ -140,6 +142,9 @@ namespace Main
                 ScanCurrentRetainerInventory(
                     RetainerInventoryWatcher.LastScanReason,
                     RetainerInventoryWatcher.LastScanWasSpeculative);
+
+            if (SaddlebagInventoryWatcher.ConsumeScanRequest())
+                ScanSaddlebagInventory(SaddlebagInventoryWatcher.LastScanReason);
         }
 
         public void RescanOwnedItems(string reason = "手动扫描。")
@@ -200,6 +205,48 @@ namespace Main
             LastInventoryScanStatus = $"{reason} {snapshot.RetainerName}: {snapshot.Records.Count} equipment locations.";
         }
 
+        private void ScanSaddlebagInventory(string reason = "Saddlebag inventory scan.")
+        {
+            if (!Svc.ClientState.IsLoggedIn || Svc.ClientState.LocalContentId == 0)
+            {
+                LastInventoryScanStatus = "Please log in before scanning saddlebag inventory.";
+                LastInventoryScanAt = null;
+                return;
+            }
+
+            var characterId = Svc.ClientState.LocalContentId;
+            if (loadedCharacterId != characterId)
+            {
+                loadedCharacterId = characterId;
+                OwnedItems.Load(characterId);
+            }
+
+            var worldId = Svc.ClientState.LocalPlayer?.HomeWorld.RowId ?? 0;
+            var snapshot = InventoryScanner.ScanSaddlebag(characterId, worldId);
+            if (!snapshot.IsReadable)
+            {
+                LastInventoryScanStatus = "Saddlebag inventory is not readable yet.";
+                return;
+            }
+
+            OwnedItems.ReplaceSaddlebagSnapshot(
+                characterId,
+                snapshot.IsSaddlebagReadable,
+                snapshot.IsPremiumSaddlebagReadable,
+                snapshot.Records);
+            Ownership.Refresh();
+
+            var saddlebagText = snapshot.IsSaddlebagReadable
+                ? $"Saddlebag: {snapshot.SaddlebagRecordCount}"
+                : "Saddlebag: unreadable";
+            var premiumText = snapshot.IsPremiumSaddlebagReadable
+                ? $"Premium Saddlebag: {snapshot.PremiumSaddlebagRecordCount}"
+                : "Premium Saddlebag: unreadable";
+
+            LastInventoryScanAt = DateTimeOffset.Now;
+            LastInventoryScanStatus = $"{reason} {saddlebagText}; {premiumText}.";
+        }
+
         public void ClearRetainerInventoryCache()
         {
             if (!Svc.ClientState.IsLoggedIn || Svc.ClientState.LocalContentId == 0)
@@ -223,6 +270,29 @@ namespace Main
             LastInventoryScanStatus = $"Cleared {removed} retainer equipment cache records.";
         }
 
+        public void ClearSaddlebagInventoryCache()
+        {
+            if (!Svc.ClientState.IsLoggedIn || Svc.ClientState.LocalContentId == 0)
+            {
+                LastInventoryScanStatus = "Please log in before clearing saddlebag cache.";
+                LastInventoryScanAt = null;
+                return;
+            }
+
+            var characterId = Svc.ClientState.LocalContentId;
+            if (loadedCharacterId != characterId)
+            {
+                loadedCharacterId = characterId;
+                OwnedItems.Load(characterId);
+            }
+
+            var removed = OwnedItems.ClearSaddlebagSnapshots(characterId);
+            Ownership.Refresh();
+
+            LastInventoryScanAt = DateTimeOffset.Now;
+            LastInventoryScanStatus = $"Cleared {removed} saddlebag equipment cache records.";
+        }
+
         #endregion
 
         //退出方法
@@ -244,6 +314,7 @@ namespace Main
             Svc.Framework.Update -= OnFrameworkUpdate;
             InventoryWatcher.Dispose();
             RetainerInventoryWatcher.Dispose();
+            SaddlebagInventoryWatcher.Dispose();
             //
             ECommonsMain.Dispose();
         }

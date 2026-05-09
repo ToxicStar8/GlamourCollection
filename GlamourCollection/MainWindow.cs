@@ -239,12 +239,16 @@ namespace Main
         {
             var plugin = Plugin.Instance;
 
-            if (ImGui.Button("重新扫描"))
+            if (ImGui.Button("重新扫描背包/军械库"))
                 plugin.RescanOwnedItems();
 
             ImGui.SameLine();
             if (ImGui.Button("清除雇员缓存"))
                 plugin.ClearRetainerInventoryCache();
+
+            ImGui.SameLine();
+            if (ImGui.Button("清除陆行鸟背包缓存"))
+                plugin.ClearSaddlebagInventoryCache();
 
             ImGui.SameLine();
             ImGui.TextUnformatted(plugin.LastInventoryScanStatus);

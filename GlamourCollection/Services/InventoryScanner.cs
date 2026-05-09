@@ -45,11 +45,29 @@ public unsafe sealed class InventoryScanner(ItemDatabaseService itemDatabase)
 
     private static readonly HashSet<GameInventoryType> RetainerContainerSet = RetainerContainers.ToHashSet();
 
+    private static readonly GameInventoryType[] SaddlebagContainers =
+    [
+        GameInventoryType.SaddleBag1,
+        GameInventoryType.SaddleBag2,
+    ];
+
+    private static readonly GameInventoryType[] PremiumSaddlebagContainers =
+    [
+        GameInventoryType.PremiumSaddleBag1,
+        GameInventoryType.PremiumSaddleBag2,
+    ];
+
+    private static readonly HashSet<GameInventoryType> SaddlebagContainerSet =
+        SaddlebagContainers.Concat(PremiumSaddlebagContainers).ToHashSet();
+
     public static bool IsPhaseOneContainer(GameInventoryType type)
         => PhaseOneContainerSet.Contains(type);
 
     public static bool IsRetainerContainer(GameInventoryType type)
         => RetainerContainerSet.Contains(type);
+
+    public static bool IsSaddlebagContainer(GameInventoryType type)
+        => SaddlebagContainerSet.Contains(type);
 
     public IReadOnlyList<OwnedItemRecord> ScanPhaseOne(ulong characterId, uint worldId)
     {
@@ -146,6 +164,75 @@ public unsafe sealed class InventoryScanner(ItemDatabaseService itemDatabase)
         return new RetainerInventorySnapshot(retainer.Id, retainerName, isReadable, records);
     }
 
+    public SaddlebagInventorySnapshot ScanSaddlebag(ulong characterId, uint worldId)
+    {
+        itemDatabase.Load();
+
+        var now = DateTimeOffset.UtcNow;
+        var saddlebag = this.ScanSaddlebagGroup(characterId, worldId, now, SaddlebagContainers, "Saddlebag");
+        var premiumSaddlebag = this.ScanSaddlebagGroup(
+            characterId,
+            worldId,
+            now,
+            PremiumSaddlebagContainers,
+            "Premium Saddlebag");
+
+        return new SaddlebagInventorySnapshot(
+            saddlebag.IsReadable,
+            premiumSaddlebag.IsReadable,
+            saddlebag.Records.Concat(premiumSaddlebag.Records).ToList(),
+            saddlebag.Records.Count,
+            premiumSaddlebag.Records.Count);
+    }
+
+    private SaddlebagGroupSnapshot ScanSaddlebagGroup(
+        ulong characterId,
+        uint worldId,
+        DateTimeOffset updatedAt,
+        IReadOnlyList<GameInventoryType> containers,
+        string sourceContainer)
+    {
+        var records = new List<OwnedItemRecord>();
+        var hasReadableContainers = false;
+
+        foreach (var container in containers)
+        {
+            var items = Svc.GameInventory.GetInventoryItems(container);
+            if (!items.IsEmpty)
+                hasReadableContainers = true;
+
+            foreach (var inventoryItem in items)
+            {
+                if (inventoryItem.IsEmpty)
+                    continue;
+
+                var rawItemId = inventoryItem.ItemId;
+                var baseItemId = inventoryItem.BaseItemId;
+                if (!itemDatabase.TryGetEquipment(baseItemId, out var equipment))
+                    continue;
+
+                records.Add(new OwnedItemRecord
+                {
+                    RawItemId = rawItemId,
+                    BaseItemId = baseItemId,
+                    ItemId = baseItemId,
+                    ItemName = equipment.Name,
+                    Quantity = inventoryItem.Quantity,
+                    IsHq = inventoryItem.IsHq,
+                    SourceContainer = sourceContainer,
+                    ContainerType = inventoryItem.ContainerType.ToString(),
+                    ContainerId = (ushort)inventoryItem.ContainerType,
+                    Slot = inventoryItem.InventorySlot,
+                    CharacterId = characterId,
+                    WorldId = worldId,
+                    UpdatedAt = updatedAt,
+                });
+            }
+        }
+
+        return new SaddlebagGroupSnapshot(hasReadableContainers, records);
+    }
+
     private static string GetContainerLabel(GameInventoryType type)
         => type switch
         {
@@ -190,5 +277,19 @@ public unsafe sealed class InventoryScanner(ItemDatabaseService itemDatabase)
 public sealed record RetainerInventorySnapshot(
     ulong RetainerId,
     string RetainerName,
+    bool IsReadable,
+    IReadOnlyList<OwnedItemRecord> Records);
+
+public sealed record SaddlebagInventorySnapshot(
+    bool IsSaddlebagReadable,
+    bool IsPremiumSaddlebagReadable,
+    IReadOnlyList<OwnedItemRecord> Records,
+    int SaddlebagRecordCount,
+    int PremiumSaddlebagRecordCount)
+{
+    public bool IsReadable => this.IsSaddlebagReadable || this.IsPremiumSaddlebagReadable;
+}
+
+internal sealed record SaddlebagGroupSnapshot(
     bool IsReadable,
     IReadOnlyList<OwnedItemRecord> Records);

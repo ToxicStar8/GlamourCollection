@@ -33,6 +33,7 @@ namespace Main
         public InventoryScanner InventoryScanner { get; private set; } = null!;
         public InventoryWatcher InventoryWatcher { get; private set; } = null!;
         public RetainerInventoryWatcher RetainerInventoryWatcher { get; private set; } = null!;
+        public SaddlebagInventoryWatcher SaddlebagInventoryWatcher { get; private set; } = null!;
         public OwnershipService Ownership { get; private set; } = null!;
         public ITryOnService TryOn { get; private set; } = null!;
         public DateTimeOffset? LastInventoryScanAt { get; private set; }

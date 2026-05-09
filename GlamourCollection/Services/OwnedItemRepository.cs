@@ -53,7 +53,7 @@ public sealed class OwnedItemRepository
     public void ReplacePhaseOneSnapshot(ulong characterId, IEnumerable<OwnedItemRecord> snapshot)
     {
         this.currentCharacterId = characterId;
-        this.records.RemoveAll(item => !IsRetainerRecord(item));
+        this.records.RemoveAll(item => !IsPersistentExternalRecord(item));
         this.records.AddRange(snapshot);
         this.SortRecords();
         this.Save();
@@ -74,10 +74,42 @@ public sealed class OwnedItemRepository
         this.Save();
     }
 
+    public void ReplaceSaddlebagSnapshot(
+        ulong characterId,
+        bool replaceSaddlebag,
+        bool replacePremiumSaddlebag,
+        IEnumerable<OwnedItemRecord> snapshot)
+    {
+        this.currentCharacterId = characterId;
+
+        if (replaceSaddlebag)
+            this.records.RemoveAll(IsSaddlebagRecord);
+
+        if (replacePremiumSaddlebag)
+            this.records.RemoveAll(IsPremiumSaddlebagRecord);
+
+        this.records.AddRange(snapshot);
+        this.SortRecords();
+        this.Save();
+    }
+
     public int ClearRetainerSnapshots(ulong characterId)
     {
         this.currentCharacterId = characterId;
         var removed = this.records.RemoveAll(IsRetainerRecord);
+        if (removed > 0)
+        {
+            this.SortRecords();
+            this.Save();
+        }
+
+        return removed;
+    }
+
+    public int ClearSaddlebagSnapshots(ulong characterId)
+    {
+        this.currentCharacterId = characterId;
+        var removed = this.records.RemoveAll(item => IsSaddlebagRecord(item) || IsPremiumSaddlebagRecord(item));
         if (removed > 0)
         {
             this.SortRecords();
@@ -130,7 +162,18 @@ public sealed class OwnedItemRepository
     }
 
     private static int GetSourceSort(OwnedItemRecord item)
-        => IsRetainerRecord(item) ? 1 : 0;
+    {
+        if (IsRetainerRecord(item))
+            return 1;
+
+        if (IsSaddlebagRecord(item))
+            return 2;
+
+        if (IsPremiumSaddlebagRecord(item))
+            return 3;
+
+        return 0;
+    }
 
     private static bool IsSameRetainerRecord(OwnedItemRecord item, ulong retainerId, string retainerName)
     {
@@ -149,6 +192,17 @@ public sealed class OwnedItemRepository
            || !string.IsNullOrWhiteSpace(item.RetainerName)
            || item.SourceContainer.StartsWith("Retainer:", StringComparison.Ordinal)
            || item.ContainerType.StartsWith("Retainer", StringComparison.Ordinal);
+
+    private static bool IsPersistentExternalRecord(OwnedItemRecord item)
+        => IsRetainerRecord(item) || IsSaddlebagRecord(item) || IsPremiumSaddlebagRecord(item);
+
+    private static bool IsSaddlebagRecord(OwnedItemRecord item)
+        => string.Equals(item.SourceContainer, "Saddlebag", StringComparison.Ordinal)
+           || item.ContainerType.StartsWith("SaddleBag", StringComparison.Ordinal);
+
+    private static bool IsPremiumSaddlebagRecord(OwnedItemRecord item)
+        => string.Equals(item.SourceContainer, "Premium Saddlebag", StringComparison.Ordinal)
+           || item.ContainerType.StartsWith("PremiumSaddleBag", StringComparison.Ordinal);
 
     private static string NormalizeRetainerName(string retainerName)
         => string.IsNullOrWhiteSpace(retainerName) ? "Unknown Retainer" : retainerName.Trim();
