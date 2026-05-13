@@ -175,6 +175,8 @@ namespace Main
         private readonly EquipmentFilterService filterService = new();
         private readonly List<EquipmentViewModel> filteredItems = [];
         private const float FilterLabelWidth = 150f;
+        private const int MaxBulkSourceFetchCount = 1000;
+        private const int BulkSourceFetchIntervalMilliseconds = 500;
         private string searchText = string.Empty;
         private string cachedSearchText = string.Empty;
         private string cachedFilterKey = string.Empty;
@@ -255,17 +257,33 @@ namespace Main
             {
                 ImGui.Text("当前为早期测试版本，开发中");
                 ImGui.Text("首次使用时，需先打开雇员/鸟包/幻化柜/收藏柜，才可获取缓存数据");
+                ImGui.Separator();
+                ImGui.TextUnformatted("详细数据来源");
+                ImGui.TextWrapped("装备来源与版本详细数据按需请求自 Garland Tools CN。本插件只缓存玩家主动请求过的装备详情。");
+
+                if (ImGui.Button("打开 Garland Tools CN"))
+                    OpenUrl("https://garlandtools.cn/db/");
+
+                ImGui.SameLine();
+                if (ImGui.Button("支持 Garland Tools CN 爱发电"))
+                    OpenUrl("https://afdian.com/a/cyanclay");
 
                 if (ImGui.Button(Lang.SendIssue))
                 {
                     var url = "https://discord.gg/GWMEY9P9BX";
-                    Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+                    OpenUrl(url);
                 }
 
                 ImGui.EndTabItem();
             }
 
             ImGui.EndTabBar();
+        }
+
+        public override void OnClose()
+        {
+            CancelBulkSourceFetch("窗口已关闭，已停止批量获取。");
+            base.OnClose();
         }
 
         private void DrawCollection()
@@ -338,16 +356,26 @@ namespace Main
 
             ImGui.SameLine();
             var missingDetailCount = CountMissingDetailedData(plugin, filtered);
+            var bulkRequestCount = Math.Min(missingDetailCount, MaxBulkSourceFetchCount);
+            var bulkEstimatedDuration = FormatBulkFetchDuration(bulkRequestCount);
             var isBulkFetching = IsBulkSourceFetchRunning();
             ImGui.BeginDisabled(isBulkFetching || missingDetailCount == 0);
-            if (ImGui.Button($"一键获取详细数据 ({Math.Min(missingDetailCount, 1000)})##bulkGarlandSource"))
+            if (ImGui.Button($"一键获取详细数据 ({bulkRequestCount})##bulkGarlandSource"))
                 StartBulkSourceFetch(plugin, filtered);
             ImGui.EndDisabled();
             if (ImGui.IsItemHovered())
-                ImGui.SetTooltip("只请求当前筛选结果中未获取详细数据的装备，一次最多 1000 条，每 0.5 秒请求 1 条。");
+                ImGui.SetTooltip($"只请求当前筛选结果中未获取详细数据的装备，一次最多 {MaxBulkSourceFetchCount} 条，每 0.5 秒请求 1 条。预计耗时：{bulkEstimatedDuration}");
+
+            if (!isBulkFetching && bulkRequestCount > 0)
+            {
+                ImGui.SameLine();
+                ImGui.TextDisabled($"预计 {bulkEstimatedDuration}");
+            }
 
             if (isBulkFetching)
             {
+                ImGui.SameLine();
+                ImGui.TextDisabled($"剩余约 {FormatBulkFetchDuration(Math.Max(0, this.bulkSourceFetchTotal - this.bulkSourceFetchCompleted))}");
                 ImGui.SameLine();
                 if (ImGui.SmallButton("停止请求##cancelBulkGarlandSource"))
                     CancelBulkSourceFetch();
@@ -815,7 +843,7 @@ namespace Main
                 .Select(item => item.ItemId)
                 .Distinct()
                 .Where(itemId => !plugin.GarlandSources.HasCachedDetailedData(itemId))
-                .Take(1000)
+                .Take(MaxBulkSourceFetchCount)
                 .ToList();
 
             if (itemIds.Count == 0)
@@ -830,10 +858,11 @@ namespace Main
             this.bulkSourceFetchCompleted = 0;
             this.bulkSourceFetchTotal = itemIds.Count;
             this.sourceFetchStatusIsError = false;
-            this.sourceFetchStatusText = $"正在批量获取详细数据：0 / {this.bulkSourceFetchTotal}";
+            this.sourceFetchStatusText = $"正在批量获取详细数据：0 / {this.bulkSourceFetchTotal}，预计 {FormatBulkFetchDuration(this.bulkSourceFetchTotal)}";
             this.bulkSourceFetchTask = GarlandBulkSourceFetchRunner.RunAsync(
                 plugin.GarlandSources,
                 itemIds,
+                TimeSpan.FromMilliseconds(BulkSourceFetchIntervalMilliseconds),
                 () =>
                 {
                     Interlocked.Increment(ref this.bulkSourceFetchCompleted);
@@ -843,10 +872,16 @@ namespace Main
         }
 
         private void CancelBulkSourceFetch()
+            => CancelBulkSourceFetch($"已停止批量获取：{this.bulkSourceFetchCompleted} / {this.bulkSourceFetchTotal}");
+
+        private void CancelBulkSourceFetch(string statusText)
         {
+            if (!IsBulkSourceFetchRunning())
+                return;
+
             this.bulkSourceFetchCts?.Cancel();
             this.sourceFetchStatusIsError = true;
-            this.sourceFetchStatusText = $"已停止批量获取：{this.bulkSourceFetchCompleted} / {this.bulkSourceFetchTotal}";
+            this.sourceFetchStatusText = statusText;
         }
 
         private bool IsBulkSourceFetchRunning()
@@ -884,7 +919,7 @@ namespace Main
             if (!task.IsCompleted)
             {
                 this.sourceFetchStatusIsError = false;
-                this.sourceFetchStatusText = $"正在批量获取详细数据：{this.bulkSourceFetchCompleted} / {this.bulkSourceFetchTotal}";
+                this.sourceFetchStatusText = $"正在批量获取详细数据：{this.bulkSourceFetchCompleted} / {this.bulkSourceFetchTotal}，剩余约 {FormatBulkFetchDuration(Math.Max(0, this.bulkSourceFetchTotal - this.bulkSourceFetchCompleted))}";
                 return;
             }
 
@@ -1075,6 +1110,21 @@ namespace Main
                 .Distinct()
                 .Count(itemId => !plugin.GarlandSources.HasCachedDetailedData(itemId));
 
+        private static string FormatBulkFetchDuration(int itemCount)
+        {
+            if (itemCount <= 0)
+                return "0 秒";
+
+            var duration = TimeSpan.FromMilliseconds(itemCount * BulkSourceFetchIntervalMilliseconds);
+            if (duration.TotalHours >= 1)
+                return $"{(int)duration.TotalHours}小时{duration.Minutes}分";
+
+            if (duration.TotalMinutes >= 1)
+                return $"{duration.Minutes}分{duration.Seconds}秒";
+
+            return $"{Math.Max(1, duration.Seconds)}秒";
+        }
+
         private static void DrawItemIcon(uint iconId, float iconSize)
         {
             var size = new Vector2(iconSize, iconSize);
@@ -1096,6 +1146,9 @@ namespace Main
 
         public void Dispose()
         {
+            CancelBulkSourceFetch("窗口已释放，已停止批量获取。");
+            this.bulkSourceFetchCts?.Dispose();
+            this.bulkSourceFetchCts = null;
         }
     }
 }

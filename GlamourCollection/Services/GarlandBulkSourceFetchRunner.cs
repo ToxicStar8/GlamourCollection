@@ -10,6 +10,7 @@ public static class GarlandBulkSourceFetchRunner
     public static async Task RunAsync(
         GarlandSourceCacheService sourceCache,
         IReadOnlyList<uint> itemIds,
+        TimeSpan requestInterval,
         Action onItemCompleted,
         CancellationToken cancellationToken)
     {
@@ -20,7 +21,7 @@ public static class GarlandBulkSourceFetchRunner
             onItemCompleted();
 
             if (index < itemIds.Count - 1)
-                await Task.Delay(TimeSpan.FromMilliseconds(500), cancellationToken).ConfigureAwait(false);
+                await Task.Delay(requestInterval, cancellationToken).ConfigureAwait(false);
         }
     }
 }
