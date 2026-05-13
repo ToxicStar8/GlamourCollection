@@ -193,9 +193,9 @@ namespace Main
         private CancellationTokenSource sourceFetchCts = new();
         private Task? bulkSourceFetchTask;
         private CancellationTokenSource? bulkSourceFetchCts;
+        private IReadOnlyList<uint> bulkSourceFetchItemIds = [];
         private int bulkSourceFetchCompleted;
         private int bulkSourceFetchTotal;
-        private int pendingSourceDataRefreshes;
         private string sourceFetchStatusText = string.Empty;
         private bool sourceFetchStatusIsError;
         private int cachedOwnershipVersion = -1;
@@ -880,20 +880,16 @@ namespace Main
 
             this.bulkSourceFetchCts?.Dispose();
             this.bulkSourceFetchCts = CancellationTokenSource.CreateLinkedTokenSource(this.sourceFetchCts.Token);
+            this.bulkSourceFetchItemIds = itemIds;
             this.bulkSourceFetchCompleted = 0;
             this.bulkSourceFetchTotal = itemIds.Count;
-            Interlocked.Exchange(ref this.pendingSourceDataRefreshes, 0);
             this.sourceFetchStatusIsError = false;
             this.sourceFetchStatusText = $"正在批量获取详细数据：0 / {this.bulkSourceFetchTotal}，预计 {FormatBulkFetchDuration(this.bulkSourceFetchTotal)}";
             this.bulkSourceFetchTask = GarlandBulkSourceFetchRunner.RunAsync(
                 plugin.GarlandSources,
                 itemIds,
                 TimeSpan.FromMilliseconds(BulkSourceFetchIntervalMilliseconds),
-                () =>
-                {
-                    Interlocked.Increment(ref this.bulkSourceFetchCompleted);
-                    Interlocked.Increment(ref this.pendingSourceDataRefreshes);
-                },
+                () => Interlocked.Increment(ref this.bulkSourceFetchCompleted),
                 this.bulkSourceFetchCts.Token);
         }
 
@@ -935,7 +931,7 @@ namespace Main
             this.bulkSourceFetchCts?.Cancel();
             this.sourceFetchTasks.Clear();
             this.bulkSourceFetchTask = null;
-            Interlocked.Exchange(ref this.pendingSourceDataRefreshes, 0);
+            this.bulkSourceFetchItemIds = [];
 
             this.sourceFetchStatusIsError = true;
             this.sourceFetchStatusText = statusText;
@@ -999,7 +995,7 @@ namespace Main
                     : result.Message;
 
                 if (result.Success)
-                    RefreshSourceData(plugin);
+                    RefreshSourceData(plugin, [itemId]);
             }
         }
 
@@ -1007,8 +1003,6 @@ namespace Main
         {
             if (this.bulkSourceFetchTask is not { } task)
                 return;
-
-            FlushPendingSourceDataRefreshes(plugin);
 
             if (!task.IsCompleted)
             {
@@ -1021,6 +1015,9 @@ namespace Main
 
             if (task.IsCanceled)
             {
+                if (this.bulkSourceFetchCompleted > 0)
+                    RefreshSourceData(plugin, GetCompletedBulkSourceItemIds());
+
                 this.sourceFetchStatusIsError = true;
                 this.sourceFetchStatusText = $"已停止批量获取：{this.bulkSourceFetchCompleted} / {this.bulkSourceFetchTotal}";
                 return;
@@ -1028,29 +1025,35 @@ namespace Main
 
             if (task.Exception is not null)
             {
+                if (this.bulkSourceFetchCompleted > 0)
+                    RefreshSourceData(plugin, GetCompletedBulkSourceItemIds());
+
                 this.sourceFetchStatusIsError = true;
                 this.sourceFetchStatusText = $"批量获取详细数据异常：{task.Exception.GetBaseException().Message}";
                 return;
             }
 
-            FlushPendingSourceDataRefreshes(plugin);
-
+            RefreshSourceData(plugin, GetCompletedBulkSourceItemIds());
             this.sourceFetchStatusIsError = false;
             this.sourceFetchStatusText = $"批量获取详细数据完成：{this.bulkSourceFetchCompleted} / {this.bulkSourceFetchTotal}";
+            this.bulkSourceFetchItemIds = [];
         }
 
-        private void FlushPendingSourceDataRefreshes(Plugin plugin)
-        {
-            if (Interlocked.Exchange(ref this.pendingSourceDataRefreshes, 0) <= 0)
-                return;
+        private IReadOnlyList<uint> GetCompletedBulkSourceItemIds()
+            => this.bulkSourceFetchItemIds
+                .Take(Math.Clamp(this.bulkSourceFetchCompleted, 0, this.bulkSourceFetchItemIds.Count))
+                .ToList();
 
-            RefreshSourceData(plugin);
-        }
-
-        private void RefreshSourceData(Plugin plugin)
+        private void RefreshSourceData(Plugin plugin, IReadOnlyList<uint> itemIds)
         {
-            plugin.ItemDatabase.Reload();
-            plugin.Ownership.Refresh();
+            var changedIds = itemIds
+                .Distinct()
+                .Where(itemId => plugin.ItemDatabase.RefreshSourceInfo(itemId))
+                .ToList();
+
+            if (changedIds.Count > 0)
+                plugin.Ownership.RefreshEquipmentData(changedIds);
+
             InvalidateFilterCache();
         }
 

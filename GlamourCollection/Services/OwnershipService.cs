@@ -42,6 +42,56 @@ public sealed class OwnershipService(ItemDatabaseService itemDatabase, OwnedItem
         this.Version++;
     }
 
+    public bool RefreshEquipmentData(IEnumerable<uint> itemIds)
+    {
+        var itemIdSet = itemIds.Where(itemId => itemId != 0).ToHashSet();
+        if (itemIdSet.Count == 0)
+            return false;
+
+        var changed = false;
+        for (var index = 0; index < this.viewModels.Count; index++)
+        {
+            var viewModel = this.viewModels[index];
+            if (!viewModel.AppearanceItems.Any(item => itemIdSet.Contains(item.ItemId)))
+                continue;
+
+            var appearanceChanged = false;
+            var updatedAppearanceItems = viewModel.AppearanceItems
+                .Select(item =>
+                {
+                    if (!itemIdSet.Contains(item.ItemId) || !itemDatabase.TryGetEquipment(item.ItemId, out var updated))
+                        return item;
+
+                    appearanceChanged = true;
+                    return updated;
+                })
+                .ToList();
+
+            var updatedRepresentative = viewModel.Item;
+            if (itemIdSet.Contains(viewModel.Item.ItemId)
+                && itemDatabase.TryGetEquipment(viewModel.Item.ItemId, out var representative))
+            {
+                updatedRepresentative = representative;
+                appearanceChanged = true;
+            }
+
+            if (!appearanceChanged)
+                continue;
+
+            this.viewModels[index] = viewModel with
+            {
+                Item = updatedRepresentative,
+                AppearanceItems = updatedAppearanceItems,
+            };
+            changed = true;
+        }
+
+        if (changed)
+            this.Version++;
+
+        return changed;
+    }
+
     private static EquipmentViewModel CreateItemViewModel(
         EquipmentRecord item,
         IReadOnlyDictionary<uint, IReadOnlyList<OwnedItemRecord>> ownedByItemId,

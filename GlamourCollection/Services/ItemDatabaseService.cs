@@ -75,4 +75,37 @@ public sealed class ItemDatabaseService(SourceInfoService sourceInfo)
         this.Load();
         return this.equipmentById.TryGetValue(itemId, out record!);
     }
+
+    public bool RefreshSourceInfo(uint itemId)
+    {
+        this.Load();
+        if (!this.equipmentById.TryGetValue(itemId, out var current))
+            return false;
+
+        foreach (var item in Svc.Data.GetExcelSheet<Item>())
+        {
+            if (item.RowId != itemId)
+                continue;
+
+            var itemSourceInfo = sourceInfo.GetSourceInfo(item);
+            var updated = current with
+            {
+                SourceInfo = itemSourceInfo.Text,
+                SourceCategories = itemSourceInfo.Categories,
+                HasDetailedData = itemSourceInfo.HasDetailedData,
+                Expansion = itemSourceInfo.Expansion,
+                ExpansionInfo = itemSourceInfo.ExpansionText,
+                IsExpansionEstimated = itemSourceInfo.IsExpansionEstimated,
+            };
+
+            this.equipmentById[itemId] = updated;
+            var index = this.equipment.FindIndex(record => record.ItemId == itemId);
+            if (index >= 0)
+                this.equipment[index] = updated;
+
+            return true;
+        }
+
+        return false;
+    }
 }
