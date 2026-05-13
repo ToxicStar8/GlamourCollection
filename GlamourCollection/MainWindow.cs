@@ -9,6 +9,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Numerics;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace Main
@@ -180,6 +181,11 @@ namespace Main
         private string tryOnStatusText = string.Empty;
         private bool tryOnStatusIsError;
         private readonly Dictionary<uint, Task<GarlandSourceFetchResult>> sourceFetchTasks = [];
+        private Task? bulkSourceFetchTask;
+        private CancellationTokenSource? bulkSourceFetchCts;
+        private int bulkSourceFetchCompleted;
+        private int bulkSourceFetchTotal;
+        private int pendingSourceDataRefreshes;
         private string sourceFetchStatusText = string.Empty;
         private bool sourceFetchStatusIsError;
         private int cachedOwnershipVersion = -1;
@@ -266,6 +272,7 @@ namespace Main
         {
             var plugin = Plugin.Instance;
             PollSourceFetchTasks(plugin);
+            PollBulkSourceFetchTask(plugin);
 
             if (ImGui.Button("重新扫描背包/军械库"))
                 plugin.RescanOwnedItems();
@@ -311,6 +318,7 @@ namespace Main
             var filters = config.Filters;
             filters.EnsureLists();
             var activeFilterCount = this.filterService.GetActiveFilterCount(this.searchText, filters);
+            var filtered = GetFilteredItems(plugin.Ownership, config);
 
             ImGui.SetNextItemWidth(Math.Max(220f, Math.Min(420f, ImGui.GetContentRegionAvail().X * 0.42f)));
             if (ImGui.InputText("搜索##search", ref searchText, 128))
@@ -327,6 +335,23 @@ namespace Main
             ImGui.SameLine();
             if (ImGui.Button("重置视图"))
                 ResetView(plugin);
+
+            ImGui.SameLine();
+            var missingDetailCount = CountMissingDetailedData(plugin, filtered);
+            var isBulkFetching = IsBulkSourceFetchRunning();
+            ImGui.BeginDisabled(isBulkFetching || missingDetailCount == 0);
+            if (ImGui.Button($"一键获取详细数据 ({Math.Min(missingDetailCount, 1000)})##bulkGarlandSource"))
+                StartBulkSourceFetch(plugin, filtered);
+            ImGui.EndDisabled();
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip("只请求当前筛选结果中未获取详细数据的装备，一次最多 1000 条，每 0.5 秒请求 1 条。");
+
+            if (isBulkFetching)
+            {
+                ImGui.SameLine();
+                if (ImGui.SmallButton("停止请求##cancelBulkGarlandSource"))
+                    CancelBulkSourceFetch();
+            }
 
             ImGui.SetNextWindowSize(new Vector2(900f, 680f), ImGuiCond.Always);
             if (ImGui.BeginPopup("##filterPopup", ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoSavedSettings))
@@ -760,7 +785,7 @@ namespace Main
             var label = isLoading
                 ? "请求中"
                 : hasCache
-                    ? (hasDetailedData ? "更新详细数据" : "补全详细数据")
+                    ? "更新详细数据"
                     : "获取详细数据";
 
             ImGui.BeginDisabled(isLoading);
@@ -780,6 +805,53 @@ namespace Main
             this.sourceFetchTasks[itemId] = Plugin.Instance.GarlandSources.FetchAndCacheAsync(itemId);
         }
 
+        private void StartBulkSourceFetch(Plugin plugin, IReadOnlyList<EquipmentViewModel> items)
+        {
+            if (IsBulkSourceFetchRunning())
+                return;
+
+            var itemIds = items
+                .SelectMany(item => item.AppearanceItems)
+                .Select(item => item.ItemId)
+                .Distinct()
+                .Where(itemId => !plugin.GarlandSources.HasCachedDetailedData(itemId))
+                .Take(1000)
+                .ToList();
+
+            if (itemIds.Count == 0)
+            {
+                this.sourceFetchStatusIsError = false;
+                this.sourceFetchStatusText = "当前筛选结果没有需要获取的详细数据。";
+                return;
+            }
+
+            this.bulkSourceFetchCts?.Dispose();
+            this.bulkSourceFetchCts = new CancellationTokenSource();
+            this.bulkSourceFetchCompleted = 0;
+            this.bulkSourceFetchTotal = itemIds.Count;
+            this.sourceFetchStatusIsError = false;
+            this.sourceFetchStatusText = $"正在批量获取详细数据：0 / {this.bulkSourceFetchTotal}";
+            this.bulkSourceFetchTask = GarlandBulkSourceFetchRunner.RunAsync(
+                plugin.GarlandSources,
+                itemIds,
+                () =>
+                {
+                    Interlocked.Increment(ref this.bulkSourceFetchCompleted);
+                    Interlocked.Increment(ref this.pendingSourceDataRefreshes);
+                },
+                this.bulkSourceFetchCts.Token);
+        }
+
+        private void CancelBulkSourceFetch()
+        {
+            this.bulkSourceFetchCts?.Cancel();
+            this.sourceFetchStatusIsError = true;
+            this.sourceFetchStatusText = $"已停止批量获取：{this.bulkSourceFetchCompleted} / {this.bulkSourceFetchTotal}";
+        }
+
+        private bool IsBulkSourceFetchRunning()
+            => this.bulkSourceFetchTask is { IsCompleted: false };
+
         private void PollSourceFetchTasks(Plugin plugin)
         {
             if (this.sourceFetchTasks.Count == 0)
@@ -798,12 +870,59 @@ namespace Main
                     : result.Message;
 
                 if (result.Success)
-                {
-                    plugin.ItemDatabase.Reload();
-                    plugin.Ownership.Refresh();
-                    InvalidateFilterCache();
-                }
+                    RefreshSourceData(plugin);
             }
+        }
+
+        private void PollBulkSourceFetchTask(Plugin plugin)
+        {
+            if (this.bulkSourceFetchTask is not { } task)
+                return;
+
+            FlushPendingSourceDataRefreshes(plugin);
+
+            if (!task.IsCompleted)
+            {
+                this.sourceFetchStatusIsError = false;
+                this.sourceFetchStatusText = $"正在批量获取详细数据：{this.bulkSourceFetchCompleted} / {this.bulkSourceFetchTotal}";
+                return;
+            }
+
+            this.bulkSourceFetchTask = null;
+
+            if (task.IsCanceled)
+            {
+                this.sourceFetchStatusIsError = true;
+                this.sourceFetchStatusText = $"已停止批量获取：{this.bulkSourceFetchCompleted} / {this.bulkSourceFetchTotal}";
+                return;
+            }
+
+            if (task.Exception is not null)
+            {
+                this.sourceFetchStatusIsError = true;
+                this.sourceFetchStatusText = $"批量获取详细数据异常：{task.Exception.GetBaseException().Message}";
+                return;
+            }
+
+            FlushPendingSourceDataRefreshes(plugin);
+
+            this.sourceFetchStatusIsError = false;
+            this.sourceFetchStatusText = $"批量获取详细数据完成：{this.bulkSourceFetchCompleted} / {this.bulkSourceFetchTotal}";
+        }
+
+        private void FlushPendingSourceDataRefreshes(Plugin plugin)
+        {
+            if (Interlocked.Exchange(ref this.pendingSourceDataRefreshes, 0) <= 0)
+                return;
+
+            RefreshSourceData(plugin);
+        }
+
+        private void RefreshSourceData(Plugin plugin)
+        {
+            plugin.ItemDatabase.Reload();
+            plugin.Ownership.Refresh();
+            InvalidateFilterCache();
         }
 
         private void TryOnEquipment(EquipmentViewModel item)
@@ -948,6 +1067,13 @@ namespace Main
 
         private static float GetIconSize(float rowHeight)
             => Math.Clamp(rowHeight - 4f, 18f, 48f);
+
+        private static int CountMissingDetailedData(Plugin plugin, IReadOnlyList<EquipmentViewModel> items)
+            => items
+                .SelectMany(item => item.AppearanceItems)
+                .Select(item => item.ItemId)
+                .Distinct()
+                .Count(itemId => !plugin.GarlandSources.HasCachedDetailedData(itemId));
 
         private static void DrawItemIcon(uint iconId, float iconSize)
         {
