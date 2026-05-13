@@ -18,6 +18,7 @@ public static class GarlandBulkSourceFetchRunner
         {
             cancellationToken.ThrowIfCancellationRequested();
             await sourceCache.FetchAndCacheAsync(itemIds[index], cancellationToken).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
             onItemCompleted();
 
             if (index < itemIds.Count - 1)

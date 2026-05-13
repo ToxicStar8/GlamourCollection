@@ -57,6 +57,13 @@ namespace Main
             ((int)EquipmentDyeFilter.NotDyeableOnly, "不可染色"),
         ];
 
+        private static readonly (int Value, string Label)[] DetailDataChips =
+        [
+            ((int)EquipmentDetailDataFilter.All, "全部详细数据"),
+            ((int)EquipmentDetailDataFilter.HasDetailedData, "已获取详细数据"),
+            ((int)EquipmentDetailDataFilter.MissingDetailedData, "未获取详细数据"),
+        ];
+
         private static readonly (int Value, string Label)[] SortChips =
         [
             ((int)EquipmentSortMode.Name, "名称"),
@@ -183,6 +190,7 @@ namespace Main
         private string tryOnStatusText = string.Empty;
         private bool tryOnStatusIsError;
         private readonly Dictionary<uint, Task<GarlandSourceFetchResult>> sourceFetchTasks = [];
+        private CancellationTokenSource sourceFetchCts = new();
         private Task? bulkSourceFetchTask;
         private CancellationTokenSource? bulkSourceFetchCts;
         private int bulkSourceFetchCompleted;
@@ -191,6 +199,7 @@ namespace Main
         private string sourceFetchStatusText = string.Empty;
         private bool sourceFetchStatusIsError;
         private int cachedOwnershipVersion = -1;
+        private bool disposed;
 
         public MainWindow() : base(Plugin.Instance.Name)
         {
@@ -282,7 +291,7 @@ namespace Main
 
         public override void OnClose()
         {
-            CancelBulkSourceFetch("窗口已关闭，已停止批量获取。");
+            StopAllSourceFetches("窗口已关闭，已停止详细数据请求。", recreateCancellationSource: true, waitForStop: false);
             base.OnClose();
         }
 
@@ -430,6 +439,12 @@ namespace Main
             DrawFilterSection("高级筛选", false);
             DrawMultiCheckboxGroup("大版本", "expansions", filters.SelectedExpansions, config, true, ExpansionChips);
             DrawMultiCheckboxGroup("来源类型", "sources", filters.SelectedSourceCategories, config, true, SourceChips);
+
+            DrawSingleCheckboxGroup("详细数据", "detailData", DetailDataChips, filters.DetailDataFilter, value =>
+            {
+                filters.DetailDataFilter = value;
+                SaveFilterChange(config);
+            });
 
             DrawSingleCheckboxGroup("品质", "quality", QualityChips, filters.QualityFilter, value =>
             {
@@ -824,19 +839,29 @@ namespace Main
 
         private void StartSourceFetch(EquipmentViewModel item)
         {
+            if (this.disposed)
+                return;
+
+            EnsureSourceFetchCancellationSource();
+
             var itemId = item.Item.ItemId;
             if (this.sourceFetchTasks.ContainsKey(itemId))
                 return;
 
             this.sourceFetchStatusIsError = false;
             this.sourceFetchStatusText = $"正在获取详细数据：{item.Item.Name}";
-            this.sourceFetchTasks[itemId] = Plugin.Instance.GarlandSources.FetchAndCacheAsync(itemId);
+            this.sourceFetchTasks[itemId] = Plugin.Instance.GarlandSources.FetchAndCacheAsync(itemId, this.sourceFetchCts.Token);
         }
 
         private void StartBulkSourceFetch(Plugin plugin, IReadOnlyList<EquipmentViewModel> items)
         {
+            if (this.disposed)
+                return;
+
             if (IsBulkSourceFetchRunning())
                 return;
+
+            EnsureSourceFetchCancellationSource();
 
             var itemIds = items
                 .SelectMany(item => item.AppearanceItems)
@@ -854,9 +879,10 @@ namespace Main
             }
 
             this.bulkSourceFetchCts?.Dispose();
-            this.bulkSourceFetchCts = new CancellationTokenSource();
+            this.bulkSourceFetchCts = CancellationTokenSource.CreateLinkedTokenSource(this.sourceFetchCts.Token);
             this.bulkSourceFetchCompleted = 0;
             this.bulkSourceFetchTotal = itemIds.Count;
+            Interlocked.Exchange(ref this.pendingSourceDataRefreshes, 0);
             this.sourceFetchStatusIsError = false;
             this.sourceFetchStatusText = $"正在批量获取详细数据：0 / {this.bulkSourceFetchTotal}，预计 {FormatBulkFetchDuration(this.bulkSourceFetchTotal)}";
             this.bulkSourceFetchTask = GarlandBulkSourceFetchRunner.RunAsync(
@@ -887,6 +913,55 @@ namespace Main
         private bool IsBulkSourceFetchRunning()
             => this.bulkSourceFetchTask is { IsCompleted: false };
 
+        private void EnsureSourceFetchCancellationSource()
+        {
+            if (!this.sourceFetchCts.IsCancellationRequested)
+                return;
+
+            this.sourceFetchCts.Dispose();
+            this.sourceFetchCts = new CancellationTokenSource();
+        }
+
+        private void StopAllSourceFetches(string statusText, bool recreateCancellationSource, bool waitForStop)
+        {
+            var runningTasks = this.sourceFetchTasks.Values
+                .Concat(this.bulkSourceFetchTask is { IsCompleted: false } bulkTask ? [bulkTask] : [])
+                .Where(task => !task.IsCompleted)
+                .ToArray();
+
+            this.sourceFetchCts.Cancel();
+            this.bulkSourceFetchCts?.Cancel();
+            this.sourceFetchTasks.Clear();
+            this.bulkSourceFetchTask = null;
+            Interlocked.Exchange(ref this.pendingSourceDataRefreshes, 0);
+
+            this.sourceFetchStatusIsError = true;
+            this.sourceFetchStatusText = statusText;
+
+            if (waitForStop && runningTasks.Length > 0)
+            {
+                try
+                {
+                    Task.WaitAll(runningTasks, TimeSpan.FromSeconds(1));
+                }
+                catch (AggregateException)
+                {
+                }
+                catch (OperationCanceledException)
+                {
+                }
+            }
+
+            this.bulkSourceFetchCts?.Dispose();
+            this.bulkSourceFetchCts = null;
+
+            if (!recreateCancellationSource)
+                return;
+
+            this.sourceFetchCts.Dispose();
+            this.sourceFetchCts = new CancellationTokenSource();
+        }
+
         private void PollSourceFetchTasks(Plugin plugin)
         {
             if (this.sourceFetchTasks.Count == 0)
@@ -898,7 +973,24 @@ namespace Main
                     continue;
 
                 this.sourceFetchTasks.Remove(itemId);
-                var result = task.GetAwaiter().GetResult();
+                GarlandSourceFetchResult result;
+                try
+                {
+                    result = task.GetAwaiter().GetResult();
+                }
+                catch (OperationCanceledException)
+                {
+                    this.sourceFetchStatusIsError = true;
+                    this.sourceFetchStatusText = "详细数据请求已停止。";
+                    continue;
+                }
+                catch (Exception ex)
+                {
+                    this.sourceFetchStatusIsError = true;
+                    this.sourceFetchStatusText = $"详细数据请求异常：{ex.Message}";
+                    continue;
+                }
+
                 this.sourceFetchStatusIsError = !result.Success;
                 this.sourceFetchStatusText = result.Success
                     ? $"详细数据已更新：{result.Message}"
@@ -1139,6 +1231,9 @@ namespace Main
             ImGui.Dummy(size);
         }
 
+        private static void OpenUrl(string url)
+            => Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+
         private void InvalidateFilterCache()
         {
             this.cachedOwnershipVersion = -1;
@@ -1146,9 +1241,9 @@ namespace Main
 
         public void Dispose()
         {
-            CancelBulkSourceFetch("窗口已释放，已停止批量获取。");
-            this.bulkSourceFetchCts?.Dispose();
-            this.bulkSourceFetchCts = null;
+            this.disposed = true;
+            StopAllSourceFetches("插件已卸载，已停止详细数据请求。", recreateCancellationSource: false, waitForStop: true);
+            this.sourceFetchCts.Dispose();
         }
     }
 }

@@ -16,6 +16,8 @@ public sealed class FilterState
 
     public int DyeFilter { get; set; } = (int)EquipmentDyeFilter.All;
 
+    public int DetailDataFilter { get; set; } = (int)EquipmentDetailDataFilter.All;
+
     public List<int> SelectedJobs { get; set; } = [];
 
     public List<int> SelectedSlots { get; set; } = [];
@@ -54,6 +56,7 @@ public sealed class FilterState
         this.QualityFilter = (int)EquipmentQualityFilter.All;
         this.SameModelFilter = (int)EquipmentSameModelFilter.All;
         this.DyeFilter = (int)EquipmentDyeFilter.All;
+        this.DetailDataFilter = (int)EquipmentDetailDataFilter.All;
         this.SelectedJobs.Clear();
         this.SelectedSlots.Clear();
         this.SelectedExpansions.Clear();

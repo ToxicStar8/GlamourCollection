@@ -32,6 +32,7 @@ public sealed class EquipmentFilterService
             filters.QualityFilter,
             filters.SameModelFilter,
             filters.DyeFilter,
+            filters.DetailDataFilter,
             string.Join(',', filters.SelectedJobs.OrderBy(value => value)),
             string.Join(',', filters.SelectedSlots.OrderBy(value => value)),
             string.Join(',', filters.SelectedExpansions.OrderBy(value => value)),
@@ -56,6 +57,8 @@ public sealed class EquipmentFilterService
         if ((EquipmentSameModelFilter)filters.SameModelFilter != EquipmentSameModelFilter.All)
             count++;
         if ((EquipmentDyeFilter)filters.DyeFilter != EquipmentDyeFilter.All)
+            count++;
+        if ((EquipmentDetailDataFilter)filters.DetailDataFilter != EquipmentDetailDataFilter.All)
             count++;
 
         count += filters.SelectedJobs.Count;
@@ -111,6 +114,13 @@ public sealed class EquipmentFilterService
             _ => query,
         };
 
+        query = (EquipmentDetailDataFilter)filters.DetailDataFilter switch
+        {
+            EquipmentDetailDataFilter.HasDetailedData => query.Where(item => item.AppearanceItems.All(HasDetailedData)),
+            EquipmentDetailDataFilter.MissingDetailedData => query.Where(item => item.AppearanceItems.Any(appearanceItem => !HasDetailedData(appearanceItem))),
+            _ => query,
+        };
+
         if (filters.SelectedJobs.Count > 0)
             query = query.Where(item => item.AppearanceItems.Any(appearanceItem => filters.SelectedJobs.Any(job => MatchesJob(appearanceItem, (JobFilter)job))));
 
@@ -157,6 +167,13 @@ public sealed class EquipmentFilterService
 
     private static bool MatchesSourceCategory(EquipmentRecord item, IReadOnlyCollection<int> selectedSourceCategories)
         => item.SourceCategories.Any(category => selectedSourceCategories.Contains((int)category));
+
+    private static bool HasDetailedData(EquipmentRecord item)
+        => item.Expansion != ExpansionCategory.Unknown
+           && !string.Equals(item.SourceInfo, "待获取缓存", StringComparison.Ordinal)
+           && !string.Equals(item.ExpansionInfo, "待获取缓存", StringComparison.Ordinal)
+           && !string.Equals(item.ExpansionInfo, "待更新详细数据", StringComparison.Ordinal)
+           && item.SourceCategories.Any(category => category != SourceCategory.Unknown);
 
     private static bool MatchesJob(EquipmentRecord item, JobFilter job)
     {
