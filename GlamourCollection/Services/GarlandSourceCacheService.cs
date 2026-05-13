@@ -152,7 +152,9 @@ public sealed class GarlandSourceCacheService
             "duties",
             "quests",
             "achievements",
+            "recipe",
             "recipes",
+            "craft",
             "crafts",
         ];
 
@@ -236,6 +238,9 @@ public sealed class GarlandSourceCacheService
                         continue;
                     }
 
+                    if (ShouldSkipRecursiveProperty(property.Name))
+                        continue;
+
                     ParseSources(root, property.Value, details, categories);
                 }
             }
@@ -257,6 +262,12 @@ public sealed class GarlandSourceCacheService
 
             if (source.ValueKind == JsonValueKind.Object)
             {
+                if (IsCraftRelation(sourceKey))
+                {
+                    ParseCraftSource(root, source, details, categories);
+                    return;
+                }
+
                 if (string.Equals(sourceKey, "tradeShops", StringComparison.OrdinalIgnoreCase)
                     || string.Equals(sourceKey, "tradeShop", StringComparison.OrdinalIgnoreCase))
                 {
@@ -305,6 +316,34 @@ public sealed class GarlandSourceCacheService
                 details.Add($"{label}: {name}");
             else if (!string.IsNullOrWhiteSpace(type))
                 details.Add(label);
+        }
+
+        private static void ParseCraftSource(JsonElement root, JsonElement craft, ISet<string> details, ISet<SourceCategory> categories)
+        {
+            categories.Add(SourceCategory.Crafting);
+
+            var parts = new List<string>();
+            var jobName = GetCraftJobName(GetUInt(craft, "job") ?? 0);
+            if (!string.IsNullOrWhiteSpace(jobName))
+                parts.Add(jobName);
+
+            var level = GetUInt(craft, "lvl") ?? GetUInt(craft, "rlvl") ?? 0;
+            var stars = GetUInt(craft, "stars") ?? 0;
+            if (level > 0)
+                parts.Add(stars > 0 ? $"{level}级{new string('★', (int)Math.Min(stars, 5))}" : $"{level}级");
+
+            var unlockId = GetUInt(craft, "unlockId") ?? 0;
+            var unlockName = ResolvePartialName(root, "item", unlockId);
+            if (!string.IsNullOrWhiteSpace(unlockName))
+                parts.Add(unlockName);
+
+            var recipeId = GetUInt(craft, "id") ?? 0;
+            if (parts.Count == 0 && recipeId > 0)
+                parts.Add($"配方 {recipeId}");
+
+            details.Add(parts.Count > 0
+                ? $"制作: {string.Join(" - ", parts)}"
+                : "制作");
         }
 
         private static void ParseTradeShop(JsonElement root, JsonElement source, string sourceKey, ISet<string> details, ISet<SourceCategory> categories)
@@ -381,6 +420,29 @@ public sealed class GarlandSourceCacheService
 
         private static bool IsSourceRelation(string propertyName)
             => SourceRelationNames.Any(name => string.Equals(name, propertyName, StringComparison.OrdinalIgnoreCase));
+
+        private static bool IsCraftRelation(string propertyName)
+            => string.Equals(propertyName, "craft", StringComparison.OrdinalIgnoreCase)
+               || string.Equals(propertyName, "crafts", StringComparison.OrdinalIgnoreCase)
+               || string.Equals(propertyName, "recipe", StringComparison.OrdinalIgnoreCase)
+               || string.Equals(propertyName, "recipes", StringComparison.OrdinalIgnoreCase);
+
+        private static bool ShouldSkipRecursiveProperty(string propertyName)
+            => ContainsAny(propertyName, "ingredients", "partials", "sharedModels", "models", "attr", "complexity", "en", "ja", "fr", "de", "tc", "ko");
+
+        private static string GetCraftJobName(uint jobId)
+            => jobId switch
+            {
+                8 => "刻木匠",
+                9 => "锻铁匠",
+                10 => "铸甲匠",
+                11 => "雕金匠",
+                12 => "制革匠",
+                13 => "裁衣匠",
+                14 => "炼金术士",
+                15 => "烹调师",
+                _ => string.Empty,
+            };
 
         private static string? ResolvePartialName(JsonElement root, string type, uint id)
         {

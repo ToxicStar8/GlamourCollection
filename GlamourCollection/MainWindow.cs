@@ -925,9 +925,11 @@ namespace Main
         private void StopAllSourceFetches(string statusText, bool recreateCancellationSource, bool waitForStop)
         {
             var runningTasks = this.sourceFetchTasks.Values
-                .Concat(this.bulkSourceFetchTask is { IsCompleted: false } bulkTask ? [bulkTask] : [])
+                .Cast<Task>()
                 .Where(task => !task.IsCompleted)
-                .ToArray();
+                .ToList();
+            if (this.bulkSourceFetchTask is { IsCompleted: false } bulkTask)
+                runningTasks.Add(bulkTask);
 
             this.sourceFetchCts.Cancel();
             this.bulkSourceFetchCts?.Cancel();
@@ -938,11 +940,11 @@ namespace Main
             this.sourceFetchStatusIsError = true;
             this.sourceFetchStatusText = statusText;
 
-            if (waitForStop && runningTasks.Length > 0)
+            if (waitForStop && runningTasks.Count > 0)
             {
                 try
                 {
-                    Task.WaitAll(runningTasks, TimeSpan.FromSeconds(1));
+                    Task.WaitAll(runningTasks.ToArray(), TimeSpan.FromSeconds(1));
                 }
                 catch (AggregateException)
                 {
