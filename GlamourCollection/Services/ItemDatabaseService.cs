@@ -16,6 +16,12 @@ public sealed class ItemDatabaseService(SourceInfoService sourceInfo)
 
     public IReadOnlyList<EquipmentRecord> Equipment => this.equipment;
 
+    public void Reload()
+    {
+        this.isLoaded = false;
+        this.Load();
+    }
+
     public void Load()
     {
         if (this.isLoaded)

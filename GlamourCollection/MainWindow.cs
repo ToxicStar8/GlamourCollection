@@ -9,6 +9,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Numerics;
+using System.Threading.Tasks;
 
 namespace Main
 {
@@ -178,6 +179,9 @@ namespace Main
         private string cachedFilterKey = string.Empty;
         private string tryOnStatusText = string.Empty;
         private bool tryOnStatusIsError;
+        private readonly Dictionary<uint, Task<GarlandSourceFetchResult>> sourceFetchTasks = [];
+        private string sourceFetchStatusText = string.Empty;
+        private bool sourceFetchStatusIsError;
         private int cachedOwnershipVersion = -1;
 
         public MainWindow() : base(Plugin.Instance.Name)
@@ -261,6 +265,7 @@ namespace Main
         private void DrawCollection()
         {
             var plugin = Plugin.Instance;
+            PollSourceFetchTasks(plugin);
 
             if (ImGui.Button("重新扫描背包/军械库"))
                 plugin.RescanOwnedItems();
@@ -296,6 +301,7 @@ namespace Main
             ImGui.TextUnformatted($"显示 {filtered.Count} / {plugin.Ownership.ViewModels.Count} | 已拥有 {plugin.Ownership.OwnedItemCount} | 启用筛选 {activeFilterCount}");
 
             this.DrawTryOnStatus();
+            this.DrawSourceFetchStatus();
             this.DrawEquipmentTable(filtered);
         }
 
@@ -644,7 +650,7 @@ namespace Main
                              | ImGuiTableFlags.SizingFixedFit;
 
             var tableHeight = Math.Max(160f, ImGui.GetContentRegionAvail().Y);
-            if (!ImGui.BeginTable("##equipmentList", 9, tableFlags, new Vector2(-1, tableHeight)))
+            if (!ImGui.BeginTable("##equipmentList", 10, tableFlags, new Vector2(-1, tableHeight)))
                 return;
 
             var iconSize = GetIconSize(rowHeight);
@@ -657,6 +663,7 @@ namespace Main
             ImGui.TableSetupColumn("来源", ImGuiTableColumnFlags.WidthFixed, 420f);
             ImGui.TableSetupColumn("同模", ImGuiTableColumnFlags.WidthFixed, 64f);
             ImGui.TableSetupColumn("拥有", ImGuiTableColumnFlags.WidthFixed, 124f);
+            ImGui.TableSetupColumn("详细数据", ImGuiTableColumnFlags.WidthFixed, 116f);
             ImGui.TableHeadersRow();
 
             var clipper = ImGui.ImGuiListClipper();
@@ -733,11 +740,70 @@ namespace Main
                 ImGui.TextDisabled("-");
             isHovered |= ImGui.IsItemHovered();
 
+            ImGui.TableSetColumnIndex(9);
+            DrawSourceCacheButton(item);
+
             if (tryOnHovered && ImGui.IsMouseClicked(ImGuiMouseButton.Left))
                 this.TryOnEquipment(item);
 
             if (isHovered)
                 DrawEquipmentTooltip(item);
+        }
+
+        private void DrawSourceCacheButton(EquipmentViewModel item)
+        {
+            var itemId = item.Item.ItemId;
+            var plugin = Plugin.Instance;
+            var isLoading = this.sourceFetchTasks.ContainsKey(itemId);
+            var hasCache = plugin.GarlandSources.HasCachedSource(itemId);
+            var hasDetailedData = plugin.GarlandSources.HasCachedDetailedData(itemId);
+            var label = isLoading
+                ? "请求中"
+                : hasCache
+                    ? (hasDetailedData ? "更新详细数据" : "补全详细数据")
+                    : "获取详细数据";
+
+            ImGui.BeginDisabled(isLoading);
+            if (ImGui.SmallButton($"{label}##garlandSource_{itemId}"))
+                StartSourceFetch(item);
+            ImGui.EndDisabled();
+        }
+
+        private void StartSourceFetch(EquipmentViewModel item)
+        {
+            var itemId = item.Item.ItemId;
+            if (this.sourceFetchTasks.ContainsKey(itemId))
+                return;
+
+            this.sourceFetchStatusIsError = false;
+            this.sourceFetchStatusText = $"正在获取详细数据：{item.Item.Name}";
+            this.sourceFetchTasks[itemId] = Plugin.Instance.GarlandSources.FetchAndCacheAsync(itemId);
+        }
+
+        private void PollSourceFetchTasks(Plugin plugin)
+        {
+            if (this.sourceFetchTasks.Count == 0)
+                return;
+
+            foreach (var (itemId, task) in this.sourceFetchTasks.ToList())
+            {
+                if (!task.IsCompleted)
+                    continue;
+
+                this.sourceFetchTasks.Remove(itemId);
+                var result = task.GetAwaiter().GetResult();
+                this.sourceFetchStatusIsError = !result.Success;
+                this.sourceFetchStatusText = result.Success
+                    ? $"详细数据已更新：{result.Message}"
+                    : result.Message;
+
+                if (result.Success)
+                {
+                    plugin.ItemDatabase.Reload();
+                    plugin.Ownership.Refresh();
+                    InvalidateFilterCache();
+                }
+            }
         }
 
         private void TryOnEquipment(EquipmentViewModel item)
@@ -758,6 +824,17 @@ namespace Main
                 ? new Vector4(0.95f, 0.32f, 0.28f, 1f)
                 : new Vector4(0.25f, 0.9f, 0.4f, 1f);
             ImGui.TextColored(color, this.tryOnStatusText);
+        }
+
+        private void DrawSourceFetchStatus()
+        {
+            if (string.IsNullOrWhiteSpace(this.sourceFetchStatusText))
+                return;
+
+            var color = this.sourceFetchStatusIsError
+                ? new Vector4(0.95f, 0.32f, 0.28f, 1f)
+                : new Vector4(0.25f, 0.72f, 1f, 1f);
+            ImGui.TextColored(color, this.sourceFetchStatusText);
         }
 
         private static string GetOwnedDisplayText(EquipmentViewModel item)

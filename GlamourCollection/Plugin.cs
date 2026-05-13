@@ -38,7 +38,8 @@ namespace Main
             //new配置出来
             Configuration = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
             Configuration.Init();
-            SourceInfo = new SourceInfoService();
+            GarlandSources = new GarlandSourceCacheService(PluginInterface.ConfigDirectory.FullName);
+            SourceInfo = new SourceInfoService(GarlandSources);
             ItemDatabase = new ItemDatabaseService(SourceInfo);
             OwnedItems = new OwnedItemRepository();
             InventoryScanner = new InventoryScanner(ItemDatabase);

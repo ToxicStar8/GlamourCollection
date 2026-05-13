@@ -4,70 +4,26 @@ using Lumina.Excel.Sheets;
 using Main.Models;
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
-using System.Text.Json;
 
 namespace Main.Services;
 
-public sealed class SourceInfoService
+public sealed class SourceInfoService(GarlandSourceCacheService garlandSourceCache)
 {
     private readonly Dictionary<uint, SourceAccumulator> sourceByItemId = [];
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNameCaseInsensitive = true,
-    };
-
     private bool isLoaded;
 
     public EquipmentSourceInfo GetSourceInfo(Item item)
     {
-        this.Load();
+        if (this.TryGetGarlandSource(item, out var garlandOnly))
+            return garlandOnly;
 
-        if (!this.sourceByItemId.TryGetValue(item.RowId, out var source) || source.Categories.Count == 0)
-        {
-            var estimatedExpansion = EstimateExpansion(item.LevelEquip);
-            return new EquipmentSourceInfo(
-                "未知来源",
-                [SourceCategory.Unknown],
-                estimatedExpansion,
-                $"{GetExpansionLabel(estimatedExpansion)}（按装备等级估算）",
-                true);
-        }
-
-        var categories = source.Categories
-            .OrderBy(GetSourceSort)
-            .ToList();
-        var sourceText = source.Details.Count > 0
-            ? string.Join(" / ", source.Details.OrderBy(detail => detail, StringComparer.CurrentCultureIgnoreCase))
-            : string.Join(" / ", categories.Select(GetSourceLabel));
-
-        var exactExpansion = source.ExpansionCandidates
-            .Where(expansion => expansion != ExpansionCategory.Unknown)
-            .OrderBy(expansion => expansion)
-            .Select(expansion => (ExpansionCategory?)expansion)
-            .FirstOrDefault();
-        var exactPatch = source.PatchNumbers
-            .Where(patch => patch > 0)
-            .OrderBy(patch => patch)
-            .Select(patch => (ushort?)patch)
-            .FirstOrDefault();
-
-        if (exactExpansion is { } expansion)
-        {
-            var expansionText = exactPatch is { } patch
-                ? $"{GetExpansionLabel(expansion)}（约 {FormatPatchNumber(patch)}）"
-                : GetExpansionLabel(expansion);
-            return new EquipmentSourceInfo(sourceText, categories, expansion, expansionText, false);
-        }
-
-        var estimated = EstimateExpansion(item.LevelEquip);
         return new EquipmentSourceInfo(
-            sourceText,
-            categories,
-            estimated,
-            $"{GetExpansionLabel(estimated)}（按装备等级估算）",
-            true);
+            "待获取缓存",
+            [SourceCategory.Unknown],
+            ExpansionCategory.Unknown,
+            "待获取缓存",
+            false);
     }
 
     private void Load()
@@ -84,7 +40,6 @@ public sealed class SourceInfoService
         this.LoadQuestSources();
         this.LoadPvpSources();
         this.LoadMogStationSources();
-        this.LoadSupplementalSources();
 
         this.isLoaded = true;
     }
@@ -216,39 +171,6 @@ public sealed class SourceInfoService
                 : $"莫古站 / 付费商城: {setName}";
             foreach (var item in itemSet.Item)
                 this.AddSource(item.RowId, SourceCategory.MogStation, detail: detail);
-        }
-    }
-
-    private void LoadSupplementalSources()
-    {
-        var path = Path.Combine(Plugin.Instance.PluginInterface.ConfigDirectory.FullName, "supplemental-sources.json");
-        if (!File.Exists(path))
-            return;
-
-        try
-        {
-            var records = JsonSerializer.Deserialize<List<SupplementalSourceRecord>>(File.ReadAllText(path), JsonOptions);
-            if (records is null)
-                return;
-
-            foreach (var record in records)
-            {
-                var category = ParseSourceCategory(record);
-                if (category == SourceCategory.Unknown && !IsUnknownCategory(record))
-                    continue;
-
-                var expansion = ParseExpansion(record);
-                var detail = string.IsNullOrWhiteSpace(record.Detail)
-                    ? GetSourceLabel(category)
-                    : record.Detail.Trim();
-
-                foreach (var itemId in record.GetItemIds())
-                    this.AddSource(itemId, category, record.PatchNumber, expansion, detail);
-            }
-        }
-        catch (Exception ex)
-        {
-            Svc.Log.Warning(ex, "Failed to load supplemental source JSON.");
         }
     }
 
@@ -452,62 +374,25 @@ public sealed class SourceInfoService
     private static bool ContainsAny(string value, params string[] tokens)
         => tokens.Any(token => value.Contains(token, StringComparison.CurrentCultureIgnoreCase));
 
-    private static SourceCategory ParseSourceCategory(SupplementalSourceRecord record)
+    private bool TryGetGarlandSource(Item item, out EquipmentSourceInfo sourceInfo)
     {
-        if (record.CategoryId is { } categoryId && Enum.IsDefined(typeof(SourceCategory), categoryId))
-            return (SourceCategory)categoryId;
-
-        if (!string.IsNullOrWhiteSpace(record.Category)
-            && Enum.TryParse<SourceCategory>(record.Category, true, out var parsed))
-            return parsed;
-
-        return record.Category?.Trim() switch
+        if (garlandSourceCache.TryGet(item.RowId, out var garlandSource) && garlandSource.HasSource)
         {
-            "副本" => SourceCategory.Dungeon,
-            "讨伐" or "极神" or "讨伐 / 极神" => SourceCategory.Trial,
-            "零式" or "高难" or "零式 / 高难" => SourceCategory.Savage,
-            "制作" => SourceCategory.Crafting,
-            "商店购买" => SourceCategory.Shop,
-            "货币兑换" => SourceCategory.CurrencyExchange,
-            "金碟" => SourceCategory.GoldSaucer,
-            "PVP" => SourceCategory.Pvp,
-            "季节活动" => SourceCategory.SeasonalEvent,
-            "成就奖励" => SourceCategory.Achievement,
-            "任务奖励" => SourceCategory.Quest,
-            "莫古站" or "付费商城" or "莫古站 / 付费商城" => SourceCategory.MogStation,
-            "深层迷宫" => SourceCategory.DeepDungeon,
-            "特殊探索区域" => SourceCategory.FieldOperation,
-            "藏宝图" => SourceCategory.TreasureMap,
-            "其他来源" => SourceCategory.Other,
-            "未知来源" => SourceCategory.Unknown,
-            _ => SourceCategory.Unknown,
-        };
-    }
+            var expansion = garlandSource.HasPatch ? garlandSource.Expansion : ExpansionCategory.Unknown;
+            var expansionText = garlandSource.HasPatch
+                ? $"{GetExpansionLabel(expansion)}（Garland {garlandSource.PatchText}）"
+                : "待更新详细数据";
+            sourceInfo = new EquipmentSourceInfo(
+                garlandSource.SourceText,
+                garlandSource.Categories.Count > 0 ? garlandSource.Categories : [SourceCategory.Other],
+                expansion,
+                expansionText,
+                false);
+            return true;
+        }
 
-    private static bool IsUnknownCategory(SupplementalSourceRecord record)
-        => record.CategoryId == (int)SourceCategory.Unknown
-           || string.Equals(record.Category, nameof(SourceCategory.Unknown), StringComparison.OrdinalIgnoreCase)
-           || string.Equals(record.Category, "未知来源", StringComparison.Ordinal);
-
-    private static ExpansionCategory ParseExpansion(SupplementalSourceRecord record)
-    {
-        if (record.ExpansionId is { } expansionId && Enum.IsDefined(typeof(ExpansionCategory), expansionId))
-            return (ExpansionCategory)expansionId;
-
-        if (!string.IsNullOrWhiteSpace(record.Expansion)
-            && Enum.TryParse<ExpansionCategory>(record.Expansion, true, out var parsed))
-            return parsed;
-
-        return record.Expansion?.Trim() switch
-        {
-            "2.x" or "新生" or "2.x 新生" => ExpansionCategory.ARealmReborn,
-            "3.x" or "苍穹" or "3.x 苍穹" => ExpansionCategory.Heavensward,
-            "4.x" or "红莲" or "4.x 红莲" => ExpansionCategory.Stormblood,
-            "5.x" or "暗影" or "5.x 暗影" => ExpansionCategory.Shadowbringers,
-            "6.x" or "晓月" or "6.x 晓月" => ExpansionCategory.Endwalker,
-            "7.x" or "黄金" or "7.x 黄金" => ExpansionCategory.Dawntrail,
-            _ => ExpansionCategory.Unknown,
-        };
+        sourceInfo = null!;
+        return false;
     }
 
     private sealed class SourceAccumulator
@@ -521,37 +406,4 @@ public sealed class SourceInfoService
         public HashSet<string> Details { get; } = [];
     }
 
-    private sealed class SupplementalSourceRecord
-    {
-        public uint ItemId { get; set; }
-
-        public List<uint>? ItemIds { get; set; }
-
-        public string? Category { get; set; }
-
-        public int? CategoryId { get; set; }
-
-        public string? Detail { get; set; }
-
-        public ushort PatchNumber { get; set; }
-
-        public string? Expansion { get; set; }
-
-        public int? ExpansionId { get; set; }
-
-        public IEnumerable<uint> GetItemIds()
-        {
-            if (this.ItemId != 0)
-                yield return this.ItemId;
-
-            if (this.ItemIds is null)
-                yield break;
-
-            foreach (var itemId in this.ItemIds)
-            {
-                if (itemId != 0)
-                    yield return itemId;
-            }
-        }
-    }
 }
