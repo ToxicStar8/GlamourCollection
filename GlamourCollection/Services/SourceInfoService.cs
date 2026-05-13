@@ -23,6 +23,7 @@ public sealed class SourceInfoService(GarlandSourceCacheService garlandSourceCac
             [SourceCategory.Unknown],
             ExpansionCategory.Unknown,
             "待获取缓存",
+            false,
             false);
     }
 
@@ -376,18 +377,25 @@ public sealed class SourceInfoService(GarlandSourceCacheService garlandSourceCac
 
     private bool TryGetGarlandSource(Item item, out EquipmentSourceInfo sourceInfo)
     {
-        if (garlandSourceCache.TryGet(item.RowId, out var garlandSource) && garlandSource.HasSource)
+        if (garlandSourceCache.TryGet(item.RowId, out var garlandSource))
         {
             var expansion = garlandSource.HasPatch ? garlandSource.Expansion : ExpansionCategory.Unknown;
             var expansionText = garlandSource.HasPatch
                 ? $"{GetExpansionLabel(expansion)}（Garland {garlandSource.PatchText}）"
                 : "待更新详细数据";
+            var categories = garlandSource.Categories.Count > 0
+                ? garlandSource.Categories
+                : [SourceCategory.Unknown];
+            var sourceText = garlandSource.HasSource
+                ? garlandSource.SourceText
+                : "未知来源";
             sourceInfo = new EquipmentSourceInfo(
-                garlandSource.SourceText,
-                garlandSource.Categories.Count > 0 ? garlandSource.Categories : [SourceCategory.Other],
+                sourceText,
+                categories,
                 expansion,
                 expansionText,
-                false);
+                false,
+                true);
             return true;
         }
 

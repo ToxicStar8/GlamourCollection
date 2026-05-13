@@ -13,6 +13,7 @@ public sealed record EquipmentRecord(
     bool CanBeDyed,
     string SourceInfo,
     IReadOnlyList<SourceCategory> SourceCategories,
+    bool HasDetailedData,
     ExpansionCategory Expansion,
     string ExpansionInfo,
     bool IsExpansionEstimated,

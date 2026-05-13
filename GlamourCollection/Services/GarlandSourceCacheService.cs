@@ -45,7 +45,7 @@ public sealed class GarlandSourceCacheService
         => this.TryGet(itemId, out var entry) && entry.HasSource;
 
     public bool HasCachedDetailedData(uint itemId)
-        => this.TryGet(itemId, out var entry) && entry.HasSource && entry.HasPatch;
+        => this.TryGet(itemId, out _);
 
     public async Task<GarlandSourceFetchResult> FetchAndCacheAsync(uint itemId, CancellationToken cancellationToken = default)
     {

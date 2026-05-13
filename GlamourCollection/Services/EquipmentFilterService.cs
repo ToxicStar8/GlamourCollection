@@ -169,11 +169,7 @@ public sealed class EquipmentFilterService
         => item.SourceCategories.Any(category => selectedSourceCategories.Contains((int)category));
 
     private static bool HasDetailedData(EquipmentRecord item)
-        => item.Expansion != ExpansionCategory.Unknown
-           && !string.Equals(item.SourceInfo, "待获取缓存", StringComparison.Ordinal)
-           && !string.Equals(item.ExpansionInfo, "待获取缓存", StringComparison.Ordinal)
-           && !string.Equals(item.ExpansionInfo, "待更新详细数据", StringComparison.Ordinal)
-           && item.SourceCategories.Any(category => category != SourceCategory.Unknown);
+        => item.HasDetailedData;
 
     private static bool MatchesJob(EquipmentRecord item, JobFilter job)
     {

@@ -7,4 +7,5 @@ public sealed record EquipmentSourceInfo(
     IReadOnlyList<SourceCategory> Categories,
     ExpansionCategory Expansion,
     string ExpansionText,
-    bool IsExpansionEstimated);
+    bool IsExpansionEstimated,
+    bool HasDetailedData);

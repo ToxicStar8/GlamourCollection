@@ -53,6 +53,7 @@ public sealed class ItemDatabaseService(SourceInfoService sourceInfo)
                 item.DyeCount > 0,
                 itemSourceInfo.Text,
                 itemSourceInfo.Categories,
+                itemSourceInfo.HasDetailedData,
                 itemSourceInfo.Expansion,
                 itemSourceInfo.ExpansionText,
                 itemSourceInfo.IsExpansionEstimated,
