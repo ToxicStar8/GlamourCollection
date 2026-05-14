@@ -37,7 +37,7 @@ public sealed record EquipmentRecord(
         ? $"item:{this.ItemId}"
         : $"model:{this.ItemUICategoryId}:{this.EquipSlotCategoryId}:{GetModelBaseId(this.ModelMain)}:{GetModelBaseId(this.ModelSub)}";
 
-    private static ulong GetModelBaseId(ulong model)
+    public static ulong GetModelBaseId(ulong model)
     {
         if (model == 0)
             return 0;
