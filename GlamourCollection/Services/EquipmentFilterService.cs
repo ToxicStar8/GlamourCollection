@@ -79,7 +79,7 @@ public sealed class EquipmentFilterService
         if (string.IsNullOrWhiteSpace(searchText))
             return query;
 
-        return query.Where(item => item.AppearanceItems.Any(
+        return query.Where(item => item.FilterItems.Any(
             appearanceItem => appearanceItem.Name.Contains(searchText, StringComparison.CurrentCultureIgnoreCase)));
     }
 
@@ -109,38 +109,38 @@ public sealed class EquipmentFilterService
 
         query = (EquipmentDyeFilter)filters.DyeFilter switch
         {
-            EquipmentDyeFilter.DyeableOnly => query.Where(item => item.AppearanceItems.Any(appearanceItem => appearanceItem.CanBeDyed)),
-            EquipmentDyeFilter.NotDyeableOnly => query.Where(item => item.AppearanceItems.All(appearanceItem => !appearanceItem.CanBeDyed)),
+            EquipmentDyeFilter.DyeableOnly => query.Where(item => item.FilterItems.Any(appearanceItem => appearanceItem.CanBeDyed)),
+            EquipmentDyeFilter.NotDyeableOnly => query.Where(item => item.FilterItems.All(appearanceItem => !appearanceItem.CanBeDyed)),
             _ => query,
         };
 
         query = (EquipmentDetailDataFilter)filters.DetailDataFilter switch
         {
-            EquipmentDetailDataFilter.HasDetailedData => query.Where(item => item.AppearanceItems.All(HasDetailedData)),
-            EquipmentDetailDataFilter.MissingDetailedData => query.Where(item => item.AppearanceItems.Any(appearanceItem => !HasDetailedData(appearanceItem))),
+            EquipmentDetailDataFilter.HasDetailedData => query.Where(item => item.FilterItems.All(HasDetailedData)),
+            EquipmentDetailDataFilter.MissingDetailedData => query.Where(item => item.FilterItems.Any(appearanceItem => !HasDetailedData(appearanceItem))),
             _ => query,
         };
 
         if (filters.SelectedJobs.Count > 0)
-            query = query.Where(item => item.AppearanceItems.Any(appearanceItem => filters.SelectedJobs.Any(job => MatchesJob(appearanceItem, (JobFilter)job))));
+            query = query.Where(item => item.FilterItems.Any(appearanceItem => filters.SelectedJobs.Any(job => MatchesJob(appearanceItem, (JobFilter)job))));
 
         if (filters.SelectedSlots.Count > 0)
-            query = query.Where(item => item.AppearanceItems.Any(appearanceItem => filters.SelectedSlots.Any(slot => MatchesSlot(appearanceItem, (EquipSlotFilter)slot))));
+            query = query.Where(item => item.FilterItems.Any(appearanceItem => filters.SelectedSlots.Any(slot => MatchesSlot(appearanceItem, (EquipSlotFilter)slot))));
 
         if (filters.SelectedExpansions.Count > 0)
-            query = query.Where(item => item.AppearanceItems.Any(appearanceItem => filters.SelectedExpansions.Contains((int)GetExpansion(appearanceItem))));
+            query = query.Where(item => item.FilterItems.Any(appearanceItem => filters.SelectedExpansions.Contains((int)GetExpansion(appearanceItem))));
 
         if (filters.SelectedSourceCategories.Count > 0)
-            query = query.Where(item => item.AppearanceItems.Any(appearanceItem => MatchesSourceCategory(appearanceItem, filters.SelectedSourceCategories)));
+            query = query.Where(item => item.FilterItems.Any(appearanceItem => MatchesSourceCategory(appearanceItem, filters.SelectedSourceCategories)));
 
         if (filters.EquipLevelMin > 0)
-            query = query.Where(item => item.AppearanceItems.Any(appearanceItem => appearanceItem.EquipLevel >= filters.EquipLevelMin));
+            query = query.Where(item => item.FilterItems.Any(appearanceItem => appearanceItem.EquipLevel >= filters.EquipLevelMin));
         if (filters.EquipLevelMax > 0)
-            query = query.Where(item => item.AppearanceItems.Any(appearanceItem => appearanceItem.EquipLevel <= filters.EquipLevelMax));
+            query = query.Where(item => item.FilterItems.Any(appearanceItem => appearanceItem.EquipLevel <= filters.EquipLevelMax));
         if (filters.ItemLevelMin > 0)
-            query = query.Where(item => item.AppearanceItems.Any(appearanceItem => appearanceItem.ItemLevel >= filters.ItemLevelMin));
+            query = query.Where(item => item.FilterItems.Any(appearanceItem => appearanceItem.ItemLevel >= filters.ItemLevelMin));
         if (filters.ItemLevelMax > 0)
-            query = query.Where(item => item.AppearanceItems.Any(appearanceItem => appearanceItem.ItemLevel <= filters.ItemLevelMax));
+            query = query.Where(item => item.FilterItems.Any(appearanceItem => appearanceItem.ItemLevel <= filters.ItemLevelMax));
 
         return query;
     }

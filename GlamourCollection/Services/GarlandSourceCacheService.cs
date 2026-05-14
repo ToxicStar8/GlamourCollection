@@ -287,7 +287,7 @@ public sealed class GarlandSourceCacheService
             }
 
             var name = GetReferenceDisplay(root, source, sourceKey, includeAmount: false);
-            if (string.IsNullOrWhiteSpace(name))
+            if (string.IsNullOrWhiteSpace(name) || IsGarlandInternalToken(name))
                 return;
 
             var category = Categorize(sourceKey, name);
@@ -312,7 +312,7 @@ public sealed class GarlandSourceCacheService
             categories.Add(category);
 
             var label = GetCategoryLabel(category);
-            if (!string.IsNullOrWhiteSpace(name))
+            if (!string.IsNullOrWhiteSpace(name) && !IsGarlandInternalToken(name))
                 details.Add($"{label}: {name}");
             else if (!string.IsNullOrWhiteSpace(type))
                 details.Add(label);
@@ -426,6 +426,14 @@ public sealed class GarlandSourceCacheService
                || string.Equals(propertyName, "crafts", StringComparison.OrdinalIgnoreCase)
                || string.Equals(propertyName, "recipe", StringComparison.OrdinalIgnoreCase)
                || string.Equals(propertyName, "recipes", StringComparison.OrdinalIgnoreCase);
+
+        private static bool IsGarlandInternalToken(string value)
+            => string.Equals(value, "INSTANCE", StringComparison.OrdinalIgnoreCase)
+               || string.Equals(value, "LOOT", StringComparison.OrdinalIgnoreCase)
+               || string.Equals(value, "CRAFT", StringComparison.OrdinalIgnoreCase)
+               || string.Equals(value, "SHOP", StringComparison.OrdinalIgnoreCase)
+               || string.Equals(value, "QUEST", StringComparison.OrdinalIgnoreCase)
+               || string.Equals(value, "ACHIEVEMENT", StringComparison.OrdinalIgnoreCase);
 
         private static bool ShouldSkipRecursiveProperty(string propertyName)
             => ContainsAny(propertyName, "ingredients", "partials", "sharedModels", "models", "attr", "complexity", "en", "ja", "fr", "de", "tc", "ko");

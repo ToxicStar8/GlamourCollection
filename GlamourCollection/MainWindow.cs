@@ -31,7 +31,7 @@ namespace Main
         private static readonly (int Value, string Label)[] AppearanceMatchModeChips =
         [
             ((int)EquipmentAppearanceMatchMode.Strict, "严格同模"),
-            ((int)EquipmentAppearanceMatchMode.Loose, "宽松同模"),
+            ((int)EquipmentAppearanceMatchMode.Loose, "宽松同模（防具/饰品）"),
         ];
 
         private static readonly (int Value, string Label)[] OwnershipChips =
@@ -276,7 +276,7 @@ namespace Main
                 }
 
                 ImGui.SameLine();
-                if (ImGui.RadioButton("宽松同模##settingsLooseAppearance", config.EquipmentAppearanceMatchMode == (int)EquipmentAppearanceMatchMode.Loose))
+                if (ImGui.RadioButton("宽松同模（防具/饰品）##settingsLooseAppearance", config.EquipmentAppearanceMatchMode == (int)EquipmentAppearanceMatchMode.Loose))
                 {
                     config.EquipmentAppearanceMatchMode = (int)EquipmentAppearanceMatchMode.Loose;
                     config.Save();
@@ -897,7 +897,7 @@ namespace Main
             EnsureSourceFetchCancellationSource();
 
             var itemIds = items
-                .SelectMany(item => item.AppearanceItems)
+                .SelectMany(item => item.FilterItems)
                 .Select(item => item.ItemId)
                 .Distinct()
                 .Where(itemId => !plugin.GarlandSources.HasCachedDetailedData(itemId))
@@ -1235,7 +1235,7 @@ namespace Main
 
         private static int CountMissingDetailedData(Plugin plugin, IReadOnlyList<EquipmentViewModel> items)
             => items
-                .SelectMany(item => item.AppearanceItems)
+                .SelectMany(item => item.FilterItems)
                 .Select(item => item.ItemId)
                 .Distinct()
                 .Count(itemId => !plugin.GarlandSources.HasCachedDetailedData(itemId));

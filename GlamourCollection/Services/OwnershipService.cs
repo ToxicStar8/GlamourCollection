@@ -24,14 +24,15 @@ public sealed class OwnershipService(ItemDatabaseService itemDatabase, OwnedItem
         var ownedByItemId = repository.Records
             .GroupBy(GetBaseItemId)
             .ToDictionary(group => group.Key, group => (IReadOnlyList<OwnedItemRecord>)group.ToList());
-        var appearanceItemsByKey = itemDatabase.Equipment
-            .GroupBy(item => item.GetAppearanceKey(appearanceMatchMode))
-            .ToDictionary(group => group.Key, group => (IReadOnlyList<EquipmentRecord>)group.ToList());
 
         this.viewModels.Clear();
 
         if (displayMode == EquipmentDisplayMode.ByAppearanceModel)
         {
+            var appearanceItemsByKey = itemDatabase.Equipment
+                .GroupBy(item => item.GetAppearanceKey(appearanceMatchMode))
+                .ToDictionary(group => group.Key, group => (IReadOnlyList<EquipmentRecord>)group.ToList());
+
             this.viewModels.AddRange(appearanceItemsByKey.Values
                 .Select(group => CreateAppearanceViewModel(group, ownedByItemId, locationMode))
                 .OrderBy(item => item.Item.Name));
@@ -39,7 +40,7 @@ public sealed class OwnershipService(ItemDatabaseService itemDatabase, OwnedItem
         else
         {
             this.viewModels.AddRange(itemDatabase.Equipment
-                .Select(item => CreateItemViewModel(item, ownedByItemId, appearanceItemsByKey, appearanceMatchMode, locationMode)));
+                .Select(item => CreateItemViewModel(item, ownedByItemId, locationMode)));
         }
 
         this.Version++;
@@ -98,15 +99,10 @@ public sealed class OwnershipService(ItemDatabaseService itemDatabase, OwnedItem
     private static EquipmentViewModel CreateItemViewModel(
         EquipmentRecord item,
         IReadOnlyDictionary<uint, IReadOnlyList<OwnedItemRecord>> ownedByItemId,
-        IReadOnlyDictionary<string, IReadOnlyList<EquipmentRecord>> appearanceItemsByKey,
-        EquipmentAppearanceMatchMode appearanceMatchMode,
         OwnedLocationMode locationMode)
     {
         ownedByItemId.TryGetValue(item.ItemId, out var locations);
-        var appearanceItems = appearanceItemsByKey.TryGetValue(item.GetAppearanceKey(appearanceMatchMode), out var matchedItems)
-            ? matchedItems
-            : [item];
-        return CreateViewModel(item, locations ?? [], appearanceItems, locationMode);
+        return CreateViewModel(item, locations ?? [], [item], locationMode, isAppearanceGroup: false);
     }
 
     private static EquipmentViewModel CreateAppearanceViewModel(
@@ -140,6 +136,7 @@ public sealed class OwnershipService(ItemDatabaseService itemDatabase, OwnedItem
             ownedLocations.Count > 0,
             ownedLocations,
             sortedItems,
+            true,
             hasNormalQuality,
             hasHighQuality);
     }
@@ -159,7 +156,8 @@ public sealed class OwnershipService(ItemDatabaseService itemDatabase, OwnedItem
         EquipmentRecord item,
         IReadOnlyList<OwnedItemRecord> allLocations,
         IReadOnlyList<EquipmentRecord> appearanceItems,
-        OwnedLocationMode locationMode)
+        OwnedLocationMode locationMode,
+        bool isAppearanceGroup)
     {
         var locations = locationMode == OwnedLocationMode.FirstLocationOnly
             ? allLocations.Take(1).ToList()
@@ -170,6 +168,7 @@ public sealed class OwnershipService(ItemDatabaseService itemDatabase, OwnedItem
             allLocations.Count > 0,
             locations,
             appearanceItems,
+            isAppearanceGroup,
             allLocations.Any(location => !location.IsHq),
             allLocations.Any(location => location.IsHq));
     }

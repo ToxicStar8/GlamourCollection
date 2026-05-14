@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 
 namespace Main.Models;
 
@@ -35,7 +36,13 @@ public sealed record EquipmentRecord(
 
     private string LooseAppearanceKey => this.ModelMain == 0 && this.ModelSub == 0
         ? $"item:{this.ItemId}"
-        : $"model:{this.ItemUICategoryId}:{this.EquipSlotCategoryId}:{GetModelBaseId(this.ModelMain)}:{GetModelBaseId(this.ModelSub)}";
+        : this.CanUseLooseAppearanceKey
+            ? $"model:{this.ItemUICategoryId}:{this.EquipSlotCategoryId}:{GetModelBaseId(this.ModelMain)}:{GetModelBaseId(this.ModelSub)}"
+            : this.StrictAppearanceKey;
+
+    private bool CanUseLooseAppearanceKey
+        => this.ItemUICategoryId is >= 34 and <= 43
+           && !ContainsAny(this.CategoryName, "Arm", "Weapon", "主手", "副手", "武器", "盾", "魔导书", "幻具", "咒具", "刀", "剑", "枪", "弓", "斧", "爪", "手杖", "刺剑", "圆月轮", "绘笔", "工具");
 
     public static ulong GetModelBaseId(ulong model)
     {
@@ -55,4 +62,7 @@ public sealed record EquipmentRecord(
 
         return model;
     }
+
+    private static bool ContainsAny(string value, params string[] tokens)
+        => tokens.Any(token => value.Contains(token, System.StringComparison.CurrentCultureIgnoreCase));
 }
