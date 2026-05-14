@@ -19,24 +19,27 @@ public sealed class OwnershipService(ItemDatabaseService itemDatabase, OwnedItem
         itemDatabase.Load();
 
         var displayMode = (EquipmentDisplayMode)configuration.EquipmentDisplayMode;
+        var appearanceMatchMode = (EquipmentAppearanceMatchMode)configuration.EquipmentAppearanceMatchMode;
         const OwnedLocationMode locationMode = OwnedLocationMode.AllLocations;
         var ownedByItemId = repository.Records
             .GroupBy(GetBaseItemId)
             .ToDictionary(group => group.Key, group => (IReadOnlyList<OwnedItemRecord>)group.ToList());
+        var appearanceItemsByKey = itemDatabase.Equipment
+            .GroupBy(item => item.GetAppearanceKey(appearanceMatchMode))
+            .ToDictionary(group => group.Key, group => (IReadOnlyList<EquipmentRecord>)group.ToList());
 
         this.viewModels.Clear();
 
         if (displayMode == EquipmentDisplayMode.ByAppearanceModel)
         {
-            this.viewModels.AddRange(itemDatabase.Equipment
-                .GroupBy(item => item.AppearanceKey)
-                .Select(group => CreateAppearanceViewModel(group.ToList(), ownedByItemId, locationMode))
+            this.viewModels.AddRange(appearanceItemsByKey.Values
+                .Select(group => CreateAppearanceViewModel(group, ownedByItemId, locationMode))
                 .OrderBy(item => item.Item.Name));
         }
         else
         {
             this.viewModels.AddRange(itemDatabase.Equipment
-                .Select(item => CreateItemViewModel(item, ownedByItemId, locationMode)));
+                .Select(item => CreateItemViewModel(item, ownedByItemId, appearanceItemsByKey, appearanceMatchMode, locationMode)));
         }
 
         this.Version++;
@@ -95,10 +98,15 @@ public sealed class OwnershipService(ItemDatabaseService itemDatabase, OwnedItem
     private static EquipmentViewModel CreateItemViewModel(
         EquipmentRecord item,
         IReadOnlyDictionary<uint, IReadOnlyList<OwnedItemRecord>> ownedByItemId,
+        IReadOnlyDictionary<string, IReadOnlyList<EquipmentRecord>> appearanceItemsByKey,
+        EquipmentAppearanceMatchMode appearanceMatchMode,
         OwnedLocationMode locationMode)
     {
         ownedByItemId.TryGetValue(item.ItemId, out var locations);
-        return CreateViewModel(item, locations ?? [], [item], locationMode);
+        var appearanceItems = appearanceItemsByKey.TryGetValue(item.GetAppearanceKey(appearanceMatchMode), out var matchedItems)
+            ? matchedItems
+            : [item];
+        return CreateViewModel(item, locations ?? [], appearanceItems, locationMode);
     }
 
     private static EquipmentViewModel CreateAppearanceViewModel(

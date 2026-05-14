@@ -28,6 +28,12 @@ namespace Main
             ((int)EquipmentDisplayMode.ByAppearanceModel, "同模型合并"),
         ];
 
+        private static readonly (int Value, string Label)[] AppearanceMatchModeChips =
+        [
+            ((int)EquipmentAppearanceMatchMode.Strict, "严格同模"),
+            ((int)EquipmentAppearanceMatchMode.Loose, "宽松同模"),
+        ];
+
         private static readonly (int Value, string Label)[] OwnershipChips =
         [
             ((int)EquipmentOwnershipFilter.All, "全部"),
@@ -259,6 +265,25 @@ namespace Main
                     config.Save();
                 }
 
+                ImGui.TextUnformatted("同模规则");
+                ImGui.SameLine();
+                if (ImGui.RadioButton("严格同模##settingsStrictAppearance", config.EquipmentAppearanceMatchMode == (int)EquipmentAppearanceMatchMode.Strict))
+                {
+                    config.EquipmentAppearanceMatchMode = (int)EquipmentAppearanceMatchMode.Strict;
+                    config.Save();
+                    Plugin.Instance.Ownership.Refresh();
+                    InvalidateFilterCache();
+                }
+
+                ImGui.SameLine();
+                if (ImGui.RadioButton("宽松同模##settingsLooseAppearance", config.EquipmentAppearanceMatchMode == (int)EquipmentAppearanceMatchMode.Loose))
+                {
+                    config.EquipmentAppearanceMatchMode = (int)EquipmentAppearanceMatchMode.Loose;
+                    config.Save();
+                    Plugin.Instance.Ownership.Refresh();
+                    InvalidateFilterCache();
+                }
+
                 ImGui.EndTabItem();
             }
 
@@ -421,6 +446,14 @@ namespace Main
             DrawSingleCheckboxGroup("显示", "display", DisplayModeChips, config.EquipmentDisplayMode, value =>
             {
                 config.EquipmentDisplayMode = value;
+                config.Save();
+                plugin.Ownership.Refresh();
+                InvalidateFilterCache();
+            }, allowToggleOff: false);
+
+            DrawSingleCheckboxGroup("同模规则", "appearanceMatch", AppearanceMatchModeChips, config.EquipmentAppearanceMatchMode, value =>
+            {
+                config.EquipmentAppearanceMatchMode = value;
                 config.Save();
                 plugin.Ownership.Refresh();
                 InvalidateFilterCache();

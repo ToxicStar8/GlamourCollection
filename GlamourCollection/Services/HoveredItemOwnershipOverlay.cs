@@ -34,7 +34,8 @@ public sealed class HoveredItemOwnershipOverlay(
             return;
 
         var useSameModel = configuration.HoveredItemOwnershipUseSameModel;
-        var locations = FindOwnedLocations(hoveredItem, useSameModel);
+        var appearanceMatchMode = (EquipmentAppearanceMatchMode)configuration.EquipmentAppearanceMatchMode;
+        var locations = FindOwnedLocations(hoveredItem, useSameModel, appearanceMatchMode);
         var exactLocations = FindExactOwnedLocations(itemId);
         var isExactOwned = exactLocations.Count > 0;
         var isOwned = locations.Count > 0;
@@ -123,19 +124,23 @@ public sealed class HoveredItemOwnershipOverlay(
         return false;
     }
 
-    private IReadOnlyList<OwnedItemRecord> FindOwnedLocations(EquipmentRecord hoveredItem, bool useSameModel)
+    private IReadOnlyList<OwnedItemRecord> FindOwnedLocations(
+        EquipmentRecord hoveredItem,
+        bool useSameModel,
+        EquipmentAppearanceMatchMode appearanceMatchMode)
     {
         if (!useSameModel)
             return FindExactOwnedLocations(hoveredItem.ItemId);
 
         var locations = new List<OwnedItemRecord>();
+        var hoveredAppearanceKey = hoveredItem.GetAppearanceKey(appearanceMatchMode);
         foreach (var location in ownedItems.Records)
         {
             var ownedItemId = GetOwnedBaseItemId(location);
             if (!itemDatabase.TryGetEquipment(ownedItemId, out var ownedItem))
                 continue;
 
-            if (ownedItem.AppearanceKey == hoveredItem.AppearanceKey)
+            if (ownedItem.GetAppearanceKey(appearanceMatchMode) == hoveredAppearanceKey)
                 locations.Add(location);
         }
 
