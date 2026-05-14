@@ -1166,14 +1166,41 @@ namespace Main
 
         private static void DrawOwnedLocationList(IReadOnlyList<OwnedItemRecord> locations)
         {
+            var includeItemName = locations
+                .Select(GetOwnedBaseItemId)
+                .Distinct()
+                .Skip(1)
+                .Any();
             var listHeight = GetTooltipListHeight(locations.Count, 8);
             if (ImGui.BeginChild("##ownedLocationTooltipList", new Vector2(560f, listHeight), true))
             {
                 foreach (var location in locations)
-                    ImGui.TextUnformatted($"{GetOwnedQualityText([location])} {OwnedLocationFormatter.Format(location)}");
+                    ImGui.TextUnformatted(FormatOwnedLocationLine(location, includeItemName));
             }
 
             ImGui.EndChild();
+        }
+
+        private static string FormatOwnedLocationLine(OwnedItemRecord location, bool includeItemName)
+        {
+            var qualityText = GetOwnedQualityText([location]);
+            var locationText = OwnedLocationFormatter.Format(location);
+            if (!includeItemName)
+                return $"{qualityText} {locationText}";
+
+            return $"{GetOwnedLocationItemName(location)} - {qualityText} {locationText}";
+        }
+
+        private static string GetOwnedLocationItemName(OwnedItemRecord location)
+        {
+            var itemId = GetOwnedBaseItemId(location);
+            if (itemId != 0 && Plugin.Instance.ItemDatabase.TryGetEquipment(itemId, out var item))
+                return item.Name;
+
+            if (!string.IsNullOrWhiteSpace(location.ItemName))
+                return location.ItemName.Trim();
+
+            return itemId == 0 ? "未知装备" : $"物品 {itemId}";
         }
 
         private static void DrawSameModelList(EquipmentViewModel item)

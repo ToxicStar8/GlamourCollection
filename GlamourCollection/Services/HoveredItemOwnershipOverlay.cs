@@ -42,9 +42,9 @@ public sealed class HoveredItemOwnershipOverlay(
 
         var statusText = BuildStatusText(isExactOwned, isOwned, useSameModel, exactLocations.Count, locations.Count);
         var locationText = isExactOwned
-            ? BuildLocationSummary(exactLocations)
+            ? BuildLocationSummary(exactLocations, includeItemName: false)
             : isOwned && useSameModel
-                ? BuildLocationSummary(locations)
+                ? BuildLocationSummary(locations, includeItemName: true)
                 : string.Empty;
         var hasLocationText = !string.IsNullOrWhiteSpace(locationText);
 
@@ -170,18 +170,39 @@ public sealed class HoveredItemOwnershipOverlay(
             : "Glamour Collection: 未拥有";
     }
 
-    private static string BuildLocationSummary(IReadOnlyList<OwnedItemRecord> locations)
+    private string BuildLocationSummary(IReadOnlyList<OwnedItemRecord> locations, bool includeItemName)
     {
         const int maxShownLocations = 3;
         var shown = locations
             .Take(maxShownLocations)
-            .Select(OwnedLocationFormatter.Format)
+            .Select(location => FormatLocationSummaryLine(location, includeItemName))
             .ToList();
 
         if (locations.Count > maxShownLocations)
             shown.Add($"另 {locations.Count - maxShownLocations} 个位置");
 
         return string.Join("\n", shown);
+    }
+
+    private string FormatLocationSummaryLine(OwnedItemRecord location, bool includeItemName)
+    {
+        var locationText = OwnedLocationFormatter.Format(location);
+        if (!includeItemName)
+            return locationText;
+
+        return $"{GetOwnedItemName(location)} - {locationText}";
+    }
+
+    private string GetOwnedItemName(OwnedItemRecord location)
+    {
+        var itemId = GetOwnedBaseItemId(location);
+        if (itemId != 0 && itemDatabase.TryGetEquipment(itemId, out var item))
+            return item.Name;
+
+        if (!string.IsNullOrWhiteSpace(location.ItemName))
+            return location.ItemName.Trim();
+
+        return itemId == 0 ? "未知装备" : $"物品 {itemId}";
     }
 
     private static uint GetOwnedBaseItemId(OwnedItemRecord item)
