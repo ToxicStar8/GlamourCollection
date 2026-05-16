@@ -188,8 +188,15 @@ namespace Main
         private readonly EquipmentFilterService filterService = new();
         private readonly List<EquipmentViewModel> filteredItems = [];
         private const float FilterLabelWidth = 150f;
+#if DEBUG
+        private const int MaxBulkSourceFetchCount = int.MaxValue;
+        private const int BulkSourceFetchIntervalMilliseconds = 100;
+        private const string BulkSourceFetchLimitText = "DEBUG 快速模式：请求当前筛选结果中全部未获取详细数据，每 0.1 秒请求 1 条。";
+#else
         private const int MaxBulkSourceFetchCount = 1000;
         private const int BulkSourceFetchIntervalMilliseconds = 500;
+        private const string BulkSourceFetchLimitText = "只请求当前筛选结果中未获取详细数据的装备，一次最多 1000 条，每 0.5 秒请求 1 条。";
+#endif
         private string searchText = string.Empty;
         private string cachedSearchText = string.Empty;
         private string cachedFilterKey = string.Empty;
@@ -398,7 +405,7 @@ namespace Main
                 StartBulkSourceFetch(plugin, filtered);
             ImGui.EndDisabled();
             if (ImGui.IsItemHovered())
-                ImGui.SetTooltip($"只请求当前筛选结果中未获取详细数据的装备，一次最多 {MaxBulkSourceFetchCount} 条，每 0.5 秒请求 1 条。预计耗时：{bulkEstimatedDuration}");
+                ImGui.SetTooltip($"{BulkSourceFetchLimitText}预计耗时：{bulkEstimatedDuration}");
 
             if (!isBulkFetching && bulkRequestCount > 0)
             {
