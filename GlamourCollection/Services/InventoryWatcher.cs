@@ -9,7 +9,7 @@ namespace Main.Services;
 
 public sealed class InventoryWatcher : IDisposable
 {
-    private const int RescanDelayFrames = 3;
+    private const int RescanDelayFrames = 60;
 
     private int framesUntilRescan;
     private int pendingEventCount;

@@ -19,7 +19,6 @@ public sealed class HoveredItemOwnershipOverlay(
     private Dictionary<uint, IReadOnlyList<OwnedItemRecord>> ownedLocationsByItemId = [];
     private Dictionary<string, IReadOnlyList<OwnedItemRecord>> ownedLocationsByAppearanceKey = [];
     private int cachedOwnedItemVersion = -1;
-    private EquipmentAppearanceMatchMode cachedAppearanceMatchMode = EquipmentAppearanceMatchMode.Strict;
     private bool hasAppearanceIndex;
 
     public void Draw()
@@ -40,19 +39,28 @@ public sealed class HoveredItemOwnershipOverlay(
 
         var useSameModel = configuration.HoveredItemOwnershipUseSameModel;
         var appearanceMatchMode = (EquipmentAppearanceMatchMode)configuration.EquipmentAppearanceMatchMode;
-        EnsureOwnedIndexes(appearanceMatchMode, useSameModel);
+        EnsureOwnedIndexes(useSameModel);
 
         var locations = FindOwnedLocations(hoveredItem, useSameModel, appearanceMatchMode);
         var exactLocations = FindExactOwnedLocations(itemId);
         var isExactOwned = exactLocations.Count > 0;
         var isOwned = locations.Count > 0;
 
-        var statusText = BuildStatusText(isExactOwned, isOwned, useSameModel, exactLocations.Count, locations.Count);
-        var locationText = isExactOwned
-            ? BuildLocationSummary(exactLocations, includeItemName: false)
-            : isOwned && useSameModel
-                ? BuildLocationSummary(locations, includeItemName: true)
-                : string.Empty;
+        var hasAdditionalSameModelLocations = useSameModel && locations.Count > exactLocations.Count;
+        var statusText = BuildStatusText(
+            isExactOwned,
+            isOwned,
+            useSameModel,
+            exactLocations.Count,
+            locations.Count,
+            hasAdditionalSameModelLocations);
+        var locationText = hasAdditionalSameModelLocations
+            ? BuildLocationSummary(locations, includeItemName: true)
+            : isExactOwned
+                ? BuildLocationSummary(exactLocations, includeItemName: false)
+                : isOwned && useSameModel
+                    ? BuildLocationSummary(locations, includeItemName: true)
+                    : string.Empty;
         var hasLocationText = !string.IsNullOrWhiteSpace(locationText);
 
         var width = MathF.Max(260f, addon.ScaledWidth);
@@ -140,9 +148,21 @@ public sealed class HoveredItemOwnershipOverlay(
             return FindExactOwnedLocations(hoveredItem.ItemId);
 
         var hoveredAppearanceKey = hoveredItem.GetAppearanceKey(appearanceMatchMode);
-        return this.ownedLocationsByAppearanceKey.TryGetValue(hoveredAppearanceKey, out var locations)
-            ? locations
-            : [];
+        if (appearanceMatchMode == EquipmentAppearanceMatchMode.Strict)
+        {
+            return this.ownedLocationsByAppearanceKey.TryGetValue(hoveredAppearanceKey, out var strictLocations)
+                ? strictLocations
+                : [];
+        }
+
+        var looseAppearanceKey = hoveredItem.GetAppearanceKey(EquipmentAppearanceMatchMode.Loose);
+        var locationKeys = new HashSet<string>(StringComparer.Ordinal);
+        var locations = new List<OwnedItemRecord>();
+        AddAppearanceLocations(hoveredAppearanceKey, locationKeys, locations);
+        if (!string.Equals(looseAppearanceKey, hoveredAppearanceKey, StringComparison.Ordinal))
+            AddAppearanceLocations(looseAppearanceKey, locationKeys, locations);
+
+        return locations;
     }
 
     private IReadOnlyList<OwnedItemRecord> FindExactOwnedLocations(uint itemId)
@@ -150,14 +170,13 @@ public sealed class HoveredItemOwnershipOverlay(
             ? locations
             : [];
 
-    private void EnsureOwnedIndexes(EquipmentAppearanceMatchMode appearanceMatchMode, bool includeAppearanceIndex)
+    private void EnsureOwnedIndexes(bool includeAppearanceIndex)
     {
         if (this.cachedOwnedItemVersion != ownedItems.Version)
             RebuildExactOwnedIndex();
 
-        if (includeAppearanceIndex
-            && (!this.hasAppearanceIndex || this.cachedAppearanceMatchMode != appearanceMatchMode))
-            RebuildAppearanceOwnedIndex(appearanceMatchMode);
+        if (includeAppearanceIndex && !this.hasAppearanceIndex)
+            RebuildAppearanceOwnedIndex();
     }
 
     private void RebuildExactOwnedIndex()
@@ -174,7 +193,7 @@ public sealed class HoveredItemOwnershipOverlay(
         this.hasAppearanceIndex = false;
     }
 
-    private void RebuildAppearanceOwnedIndex(EquipmentAppearanceMatchMode appearanceMatchMode)
+    private void RebuildAppearanceOwnedIndex()
     {
         var indexed = new Dictionary<string, List<OwnedItemRecord>>();
         foreach (var (itemId, locations) in this.ownedLocationsByItemId)
@@ -182,30 +201,62 @@ public sealed class HoveredItemOwnershipOverlay(
             if (!itemDatabase.TryGetEquipment(itemId, out var item))
                 continue;
 
-            var appearanceKey = item.GetAppearanceKey(appearanceMatchMode);
-            if (!indexed.TryGetValue(appearanceKey, out var appearanceLocations))
-            {
-                appearanceLocations = [];
-                indexed[appearanceKey] = appearanceLocations;
-            }
+            AddIndexedLocations(indexed, item.GetAppearanceKey(EquipmentAppearanceMatchMode.Strict), locations);
 
-            appearanceLocations.AddRange(locations);
+            var looseAppearanceKey = item.GetAppearanceKey(EquipmentAppearanceMatchMode.Loose);
+            if (!string.Equals(looseAppearanceKey, item.GetAppearanceKey(EquipmentAppearanceMatchMode.Strict), StringComparison.Ordinal))
+                AddIndexedLocations(indexed, looseAppearanceKey, locations);
         }
 
         this.ownedLocationsByAppearanceKey = indexed.ToDictionary(
             pair => pair.Key,
             pair => (IReadOnlyList<OwnedItemRecord>)pair.Value);
-        this.cachedAppearanceMatchMode = appearanceMatchMode;
         this.hasAppearanceIndex = true;
     }
+
+    private static void AddIndexedLocations(
+        IDictionary<string, List<OwnedItemRecord>> indexed,
+        string appearanceKey,
+        IReadOnlyList<OwnedItemRecord> locations)
+    {
+        if (!indexed.TryGetValue(appearanceKey, out var appearanceLocations))
+        {
+            appearanceLocations = [];
+            indexed[appearanceKey] = appearanceLocations;
+        }
+
+        appearanceLocations.AddRange(locations);
+    }
+
+    private void AddAppearanceLocations(
+        string appearanceKey,
+        ISet<string> locationKeys,
+        ICollection<OwnedItemRecord> locations)
+    {
+        if (!this.ownedLocationsByAppearanceKey.TryGetValue(appearanceKey, out var indexedLocations))
+            return;
+
+        foreach (var location in indexedLocations)
+        {
+            if (locationKeys.Add(GetLocationKey(location)))
+                locations.Add(location);
+        }
+    }
+
+    private static string GetLocationKey(OwnedItemRecord location)
+        => $"{GetOwnedBaseItemId(location)}|{location.SourceContainer}|{location.ContainerType}|{location.ContainerId}|{location.Slot}|{location.RetainerId}";
 
     private static string BuildStatusText(
         bool isExactOwned,
         bool isOwned,
         bool useSameModel,
         int exactLocationCount,
-        int sameModelLocationCount)
+        int sameModelLocationCount,
+        bool hasAdditionalSameModelLocations)
     {
+        if (isExactOwned && hasAdditionalSameModelLocations)
+            return $"Glamour Collection: 已拥有 / 同模已拥有 ({sameModelLocationCount} 个位置)";
+
         if (isExactOwned)
             return $"Glamour Collection: 已拥有 ({exactLocationCount} 个位置)";
 

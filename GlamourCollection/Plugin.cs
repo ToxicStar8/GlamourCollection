@@ -143,7 +143,7 @@ namespace Main
             }
 
             if (InventoryWatcher.ConsumeRescanRequest())
-                RescanOwnedItems(InventoryWatcher.LastChangeReason);
+                RescanOwnedItems(InventoryWatcher.LastChangeReason, refreshWhenLocationsOnly: false);
 
             if (RetainerInventoryWatcher.ConsumeScanRequest())
                 ScanCurrentRetainerInventory(
@@ -160,7 +160,7 @@ namespace Main
                 ScanArmoireInventory(ArmoireInventoryWatcher.LastScanReason);
         }
 
-        public void RescanOwnedItems(string reason = "手动扫描。")
+        public void RescanOwnedItems(string reason = "手动扫描。", bool refreshWhenLocationsOnly = true)
         {
             if (!Svc.ClientState.IsLoggedIn || Svc.ClientState.LocalContentId == 0)
             {
@@ -179,11 +179,14 @@ namespace Main
             var worldId = Svc.ClientState.LocalPlayer?.HomeWorld.RowId ?? 0;
             var snapshot = InventoryScanner.ScanPhaseOne(characterId, worldId);
 
-            OwnedItems.ReplacePhaseOneSnapshot(characterId, snapshot);
-            Ownership.Refresh();
+            var changeKind = OwnedItems.ReplacePhaseOneSnapshot(characterId, snapshot);
+            if (refreshWhenLocationsOnly || changeKind == OwnedItemSnapshotChangeKind.OwnershipChanged)
+                Ownership.Refresh();
 
             LastInventoryScanAt = DateTimeOffset.Now;
-            LastInventoryScanStatus = $"{reason} 已扫描 {snapshot.Count} 个装备位置。";
+            LastInventoryScanStatus = changeKind == OwnedItemSnapshotChangeKind.LocationsOnly && !refreshWhenLocationsOnly
+                ? $"{reason} 已更新装备位置，拥有列表未重建。"
+                : $"{reason} 已扫描 {snapshot.Count} 个装备位置。";
         }
 
         private void ScanCurrentRetainerInventory(string reason = "雇员库存扫描。", bool silentIfUnreadable = false)

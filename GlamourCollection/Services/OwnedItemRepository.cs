@@ -58,14 +58,26 @@ public sealed class OwnedItemRepository
         this.Save();
     }
 
-    public void ReplacePhaseOneSnapshot(ulong characterId, IEnumerable<OwnedItemRecord> snapshot)
+    public OwnedItemSnapshotChangeKind ReplacePhaseOneSnapshot(ulong characterId, IEnumerable<OwnedItemRecord> snapshot)
     {
         this.currentCharacterId = characterId;
+        var oldSnapshot = this.records
+            .Where(item => !IsPersistentExternalRecord(item))
+            .ToList();
+        var newSnapshot = snapshot.ToList();
+
+        if (HasSameRecordSignature(oldSnapshot, newSnapshot))
+            return OwnedItemSnapshotChangeKind.None;
+
         this.records.RemoveAll(item => !IsPersistentExternalRecord(item));
-        this.records.AddRange(snapshot);
+        this.records.AddRange(newSnapshot);
         this.SortRecords();
         this.MarkChanged();
         this.Save();
+
+        return HasSameOwnershipSignature(oldSnapshot, newSnapshot)
+            ? OwnedItemSnapshotChangeKind.LocationsOnly
+            : OwnedItemSnapshotChangeKind.OwnershipChanged;
     }
 
     public void ReplaceRetainerSnapshot(
@@ -292,6 +304,65 @@ public sealed class OwnedItemRepository
            || string.Equals(item.SourceContainer, "收藏柜", StringComparison.Ordinal)
            || item.ContainerType.StartsWith("Armoire", StringComparison.Ordinal);
 
+    private static bool HasSameRecordSignature(
+        IReadOnlyList<OwnedItemRecord> left,
+        IReadOnlyList<OwnedItemRecord> right)
+        => HasSameSignature(left, right, BuildRecordSignature);
+
+    private static bool HasSameOwnershipSignature(
+        IReadOnlyList<OwnedItemRecord> left,
+        IReadOnlyList<OwnedItemRecord> right)
+        => HasSameSignature(left, right, BuildOwnershipSignature);
+
+    private static bool HasSameSignature(
+        IReadOnlyList<OwnedItemRecord> left,
+        IReadOnlyList<OwnedItemRecord> right,
+        Func<OwnedItemRecord, string> buildSignature)
+    {
+        if (left.Count != right.Count)
+            return false;
+
+        var leftSignatures = left.Select(buildSignature).Order(StringComparer.Ordinal).ToList();
+        var rightSignatures = right.Select(buildSignature).Order(StringComparer.Ordinal).ToList();
+        for (var index = 0; index < leftSignatures.Count; index++)
+        {
+            if (!string.Equals(leftSignatures[index], rightSignatures[index], StringComparison.Ordinal))
+                return false;
+        }
+
+        return true;
+    }
+
+    private static string BuildRecordSignature(OwnedItemRecord item)
+        => $"{BuildOwnershipSignature(item)}|{item.Quantity}|{item.SourceContainer}|{item.ContainerType}|{item.ContainerId}|{item.Slot}";
+
+    private static string BuildOwnershipSignature(OwnedItemRecord item)
+        => $"{GetBaseItemId(item)}|{item.IsHq}";
+
+    private static uint GetBaseItemId(OwnedItemRecord item)
+    {
+        if (item.BaseItemId != 0)
+            return item.BaseItemId;
+
+        if (item.ItemId != 0)
+            return NormalizeBaseItemId(item.ItemId);
+
+        return NormalizeBaseItemId(item.RawItemId);
+    }
+
+    private static uint NormalizeBaseItemId(uint itemId)
+    {
+        const uint highQualityItemIdOffset = 1_000_000;
+        return itemId > highQualityItemIdOffset ? itemId - highQualityItemIdOffset : itemId;
+    }
+
     private static string NormalizeRetainerName(string retainerName)
         => string.IsNullOrWhiteSpace(retainerName) ? "未知雇员" : retainerName.Trim();
+}
+
+public enum OwnedItemSnapshotChangeKind
+{
+    None,
+    LocationsOnly,
+    OwnershipChanged,
 }
