@@ -16,6 +16,11 @@ public sealed class HoveredItemOwnershipOverlay(
 {
     private const uint HighQualityItemIdOffset = 1_000_000;
     private static readonly string[] ItemDetailAddonNames = ["ItemDetail", "ItemDetailCompare"];
+    private Dictionary<uint, IReadOnlyList<OwnedItemRecord>> ownedLocationsByItemId = [];
+    private Dictionary<string, IReadOnlyList<OwnedItemRecord>> ownedLocationsByAppearanceKey = [];
+    private int cachedOwnedItemVersion = -1;
+    private EquipmentAppearanceMatchMode cachedAppearanceMatchMode = EquipmentAppearanceMatchMode.Strict;
+    private bool hasAppearanceIndex;
 
     public void Draw()
     {
@@ -35,6 +40,8 @@ public sealed class HoveredItemOwnershipOverlay(
 
         var useSameModel = configuration.HoveredItemOwnershipUseSameModel;
         var appearanceMatchMode = (EquipmentAppearanceMatchMode)configuration.EquipmentAppearanceMatchMode;
+        EnsureOwnedIndexes(appearanceMatchMode, useSameModel);
+
         var locations = FindOwnedLocations(hoveredItem, useSameModel, appearanceMatchMode);
         var exactLocations = FindExactOwnedLocations(itemId);
         var isExactOwned = exactLocations.Count > 0;
@@ -52,7 +59,7 @@ public sealed class HoveredItemOwnershipOverlay(
         var padding = new Vector2(8f, 5f);
         var lineHeight = ImGui.CalcTextSize("A").Y;
         var statusLines = 1f;
-        var locationLines = hasLocationText ? (float)locationText.Split('\n').Length : 0f;
+        var locationLines = hasLocationText ? CountLines(locationText) : 0f;
         var stripHeight = (statusLines + locationLines) * lineHeight + padding.Y * 2
             + (hasLocationText ? 2f : 0f);
         var position = new Vector2(addon.X, addon.Y - stripHeight - 3f);
@@ -132,25 +139,65 @@ public sealed class HoveredItemOwnershipOverlay(
         if (!useSameModel)
             return FindExactOwnedLocations(hoveredItem.ItemId);
 
-        var locations = new List<OwnedItemRecord>();
         var hoveredAppearanceKey = hoveredItem.GetAppearanceKey(appearanceMatchMode);
-        foreach (var location in ownedItems.Records)
-        {
-            var ownedItemId = GetOwnedBaseItemId(location);
-            if (!itemDatabase.TryGetEquipment(ownedItemId, out var ownedItem))
-                continue;
-
-            if (ownedItem.GetAppearanceKey(appearanceMatchMode) == hoveredAppearanceKey)
-                locations.Add(location);
-        }
-
-        return locations;
+        return this.ownedLocationsByAppearanceKey.TryGetValue(hoveredAppearanceKey, out var locations)
+            ? locations
+            : [];
     }
 
     private IReadOnlyList<OwnedItemRecord> FindExactOwnedLocations(uint itemId)
-        => ownedItems.Records
-            .Where(location => GetOwnedBaseItemId(location) == itemId)
-            .ToList();
+        => this.ownedLocationsByItemId.TryGetValue(itemId, out var locations)
+            ? locations
+            : [];
+
+    private void EnsureOwnedIndexes(EquipmentAppearanceMatchMode appearanceMatchMode, bool includeAppearanceIndex)
+    {
+        if (this.cachedOwnedItemVersion != ownedItems.Version)
+            RebuildExactOwnedIndex();
+
+        if (includeAppearanceIndex
+            && (!this.hasAppearanceIndex || this.cachedAppearanceMatchMode != appearanceMatchMode))
+            RebuildAppearanceOwnedIndex(appearanceMatchMode);
+    }
+
+    private void RebuildExactOwnedIndex()
+    {
+        this.ownedLocationsByItemId = ownedItems.Records
+            .GroupBy(GetOwnedBaseItemId)
+            .Where(group => group.Key != 0)
+            .ToDictionary(
+                group => group.Key,
+                group => (IReadOnlyList<OwnedItemRecord>)group.ToList());
+
+        this.ownedLocationsByAppearanceKey = [];
+        this.cachedOwnedItemVersion = ownedItems.Version;
+        this.hasAppearanceIndex = false;
+    }
+
+    private void RebuildAppearanceOwnedIndex(EquipmentAppearanceMatchMode appearanceMatchMode)
+    {
+        var indexed = new Dictionary<string, List<OwnedItemRecord>>();
+        foreach (var (itemId, locations) in this.ownedLocationsByItemId)
+        {
+            if (!itemDatabase.TryGetEquipment(itemId, out var item))
+                continue;
+
+            var appearanceKey = item.GetAppearanceKey(appearanceMatchMode);
+            if (!indexed.TryGetValue(appearanceKey, out var appearanceLocations))
+            {
+                appearanceLocations = [];
+                indexed[appearanceKey] = appearanceLocations;
+            }
+
+            appearanceLocations.AddRange(locations);
+        }
+
+        this.ownedLocationsByAppearanceKey = indexed.ToDictionary(
+            pair => pair.Key,
+            pair => (IReadOnlyList<OwnedItemRecord>)pair.Value);
+        this.cachedAppearanceMatchMode = appearanceMatchMode;
+        this.hasAppearanceIndex = true;
+    }
 
     private static string BuildStatusText(
         bool isExactOwned,
@@ -218,4 +265,16 @@ public sealed class HoveredItemOwnershipOverlay(
 
     private static uint NormalizeBaseItemId(uint itemId)
         => itemId > HighQualityItemIdOffset ? itemId - HighQualityItemIdOffset : itemId;
+
+    private static float CountLines(string text)
+    {
+        var lines = 1;
+        foreach (var character in text)
+        {
+            if (character == '\n')
+                lines++;
+        }
+
+        return lines;
+    }
 }

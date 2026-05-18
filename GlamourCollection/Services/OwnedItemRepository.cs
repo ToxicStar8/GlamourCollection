@@ -20,6 +20,8 @@ public sealed class OwnedItemRepository
 
     public IReadOnlyList<OwnedItemRecord> Records => this.records;
 
+    public int Version { get; private set; }
+
     public void Load(ulong characterId)
     {
         this.currentCharacterId = characterId;
@@ -27,7 +29,10 @@ public sealed class OwnedItemRepository
 
         var path = this.GetOwnedItemsPath(characterId);
         if (!File.Exists(path))
+        {
+            this.MarkChanged();
             return;
+        }
 
         try
         {
@@ -39,6 +44,8 @@ public sealed class OwnedItemRepository
         {
             Svc.Log.Warning(ex, "Failed to load owned item JSON.");
         }
+
+        this.MarkChanged();
     }
 
     public void ReplaceAll(ulong characterId, IEnumerable<OwnedItemRecord> snapshot)
@@ -47,6 +54,7 @@ public sealed class OwnedItemRepository
         this.records.Clear();
         this.records.AddRange(snapshot);
         this.SortRecords();
+        this.MarkChanged();
         this.Save();
     }
 
@@ -56,6 +64,7 @@ public sealed class OwnedItemRepository
         this.records.RemoveAll(item => !IsPersistentExternalRecord(item));
         this.records.AddRange(snapshot);
         this.SortRecords();
+        this.MarkChanged();
         this.Save();
     }
 
@@ -71,6 +80,7 @@ public sealed class OwnedItemRepository
         this.records.RemoveAll(item => IsSameRetainerRecord(item, retainerId, normalizedRetainerName));
         this.records.AddRange(snapshot);
         this.SortRecords();
+        this.MarkChanged();
         this.Save();
     }
 
@@ -90,6 +100,7 @@ public sealed class OwnedItemRepository
 
         this.records.AddRange(snapshot);
         this.SortRecords();
+        this.MarkChanged();
         this.Save();
     }
 
@@ -99,6 +110,7 @@ public sealed class OwnedItemRepository
         this.records.RemoveAll(IsGlamourDresserRecord);
         this.records.AddRange(snapshot);
         this.SortRecords();
+        this.MarkChanged();
         this.Save();
     }
 
@@ -108,6 +120,7 @@ public sealed class OwnedItemRepository
         this.records.RemoveAll(IsArmoireRecord);
         this.records.AddRange(snapshot);
         this.SortRecords();
+        this.MarkChanged();
         this.Save();
     }
 
@@ -118,6 +131,7 @@ public sealed class OwnedItemRepository
         if (removed > 0)
         {
             this.SortRecords();
+            this.MarkChanged();
             this.Save();
         }
 
@@ -131,6 +145,7 @@ public sealed class OwnedItemRepository
         if (removed > 0)
         {
             this.SortRecords();
+            this.MarkChanged();
             this.Save();
         }
 
@@ -144,6 +159,7 @@ public sealed class OwnedItemRepository
         if (removed > 0)
         {
             this.SortRecords();
+            this.MarkChanged();
             this.Save();
         }
 
@@ -157,6 +173,7 @@ public sealed class OwnedItemRepository
         if (removed > 0)
         {
             this.SortRecords();
+            this.MarkChanged();
             this.Save();
         }
 
@@ -170,6 +187,7 @@ public sealed class OwnedItemRepository
     {
         this.currentCharacterId = 0;
         this.records.Clear();
+        this.MarkChanged();
     }
 
     public void Save()
@@ -204,6 +222,9 @@ public sealed class OwnedItemRepository
             return containerCompare != 0 ? containerCompare : left.Slot.CompareTo(right.Slot);
         });
     }
+
+    private void MarkChanged()
+        => this.Version++;
 
     private static int GetSourceSort(OwnedItemRecord item)
     {
