@@ -80,20 +80,33 @@ public sealed class OwnedItemRepository
             : OwnedItemSnapshotChangeKind.OwnershipChanged;
     }
 
-    public void ReplaceRetainerSnapshot(
+    public OwnedItemSnapshotChangeKind ReplaceRetainerSnapshot(
         ulong characterId,
         ulong retainerId,
         string retainerName,
-        IEnumerable<OwnedItemRecord> snapshot)
+        IEnumerable<OwnedItemRecord> snapshot,
+        bool save = true)
     {
         this.currentCharacterId = characterId;
         var normalizedRetainerName = NormalizeRetainerName(retainerName);
+        var oldSnapshot = this.records
+            .Where(item => IsSameRetainerRecord(item, retainerId, normalizedRetainerName))
+            .ToList();
+        var newSnapshot = snapshot.ToList();
+
+        if (HasSameRecordSignature(oldSnapshot, newSnapshot))
+            return OwnedItemSnapshotChangeKind.None;
 
         this.records.RemoveAll(item => IsSameRetainerRecord(item, retainerId, normalizedRetainerName));
-        this.records.AddRange(snapshot);
+        this.records.AddRange(newSnapshot);
         this.SortRecords();
         this.MarkChanged();
-        this.Save();
+        if (save)
+            this.Save();
+
+        return HasSameOwnershipSignature(oldSnapshot, newSnapshot)
+            ? OwnedItemSnapshotChangeKind.LocationsOnly
+            : OwnedItemSnapshotChangeKind.OwnershipChanged;
     }
 
     public void ReplaceSaddlebagSnapshot(
@@ -263,11 +276,13 @@ public sealed class OwnedItemRepository
         if (!IsRetainerRecord(item))
             return false;
 
-        if (retainerId != 0 && item.RetainerId == retainerId)
-            return true;
+        if (retainerId != 0 && item.RetainerId != 0)
+            return item.RetainerId == retainerId;
 
-        return retainerId == 0
-               && string.Equals(NormalizeRetainerName(item.RetainerName), retainerName, StringComparison.OrdinalIgnoreCase);
+        return string.Equals(
+            NormalizeRetainerName(item.RetainerName),
+            retainerName,
+            StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool IsRetainerRecord(OwnedItemRecord item)

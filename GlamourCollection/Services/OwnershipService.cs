@@ -96,6 +96,27 @@ public sealed class OwnershipService(ItemDatabaseService itemDatabase, OwnedItem
         return changed;
     }
 
+    public void RefreshOwnedLocations()
+    {
+        var ownedByItemId = repository.Records
+            .GroupBy(GetBaseItemId)
+            .ToDictionary(group => group.Key, group => (IReadOnlyList<OwnedItemRecord>)group.ToList());
+        const OwnedLocationMode locationMode = OwnedLocationMode.AllLocations;
+
+        for (var index = 0; index < this.viewModels.Count; index++)
+        {
+            var viewModel = this.viewModels[index];
+            if (!viewModel.IsOwned)
+                continue;
+
+            this.viewModels[index] = viewModel.IsAppearanceGroup
+                ? CreateAppearanceViewModel(viewModel.AppearanceItems, ownedByItemId, locationMode)
+                : CreateItemViewModel(viewModel.Item, ownedByItemId, locationMode);
+        }
+
+        this.Version++;
+    }
+
     private static EquipmentViewModel CreateItemViewModel(
         EquipmentRecord item,
         IReadOnlyDictionary<uint, IReadOnlyList<OwnedItemRecord>> ownedByItemId,

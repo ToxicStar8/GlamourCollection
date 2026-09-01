@@ -104,6 +104,7 @@ namespace Main
 
         private void OnLogout(int type, int code)
         {
+            FlushRetainerSnapshotQueue();
             scanWhenCharacterReady = false;
             loadedCharacterId = 0;
             InventoryWatcher.ClearPending();
@@ -128,6 +129,7 @@ namespace Main
 
             if (loadedCharacterId != characterId)
             {
+                FlushRetainerSnapshotQueue();
                 loadedCharacterId = characterId;
                 OwnedItems.Load(characterId);
                 Ownership.Refresh();
@@ -145,10 +147,13 @@ namespace Main
             if (InventoryWatcher.ConsumeRescanRequest())
                 RescanOwnedItems(InventoryWatcher.LastChangeReason, refreshWhenLocationsOnly: false);
 
+            ProcessRetainerSnapshotQueue();
+            RetainerInventoryWatcher.UpdateActiveRetainer();
             if (RetainerInventoryWatcher.ConsumeScanRequest())
                 ScanCurrentRetainerInventory(
                     RetainerInventoryWatcher.LastScanReason,
-                    RetainerInventoryWatcher.LastScanWasSpeculative);
+                    RetainerInventoryWatcher.LastScanWasSpeculative,
+                    RetainerInventoryWatcher.LastScanRetainerId);
 
             if (SaddlebagInventoryWatcher.ConsumeScanRequest())
                 ScanSaddlebagInventory(SaddlebagInventoryWatcher.LastScanReason);
@@ -189,7 +194,10 @@ namespace Main
                 : $"{reason} 已扫描 {snapshot.Count} 个装备位置。";
         }
 
-        private void ScanCurrentRetainerInventory(string reason = "雇员库存扫描。", bool silentIfUnreadable = false)
+        private void ScanCurrentRetainerInventory(
+            string reason = "雇员库存扫描。",
+            bool silentIfUnreadable = false,
+            ulong expectedRetainerId = 0)
         {
             if (!Svc.ClientState.IsLoggedIn || Svc.ClientState.LocalContentId == 0)
             {
@@ -207,6 +215,16 @@ namespace Main
 
             var worldId = Svc.ClientState.LocalPlayer?.HomeWorld.RowId ?? 0;
             var snapshot = InventoryScanner.ScanCurrentRetainer(characterId, worldId);
+            if (expectedRetainerId != 0 && snapshot.RetainerId != expectedRetainerId)
+            {
+                if (RetainerInventoryWatcher.ScheduleRetry(reason, silentIfUnreadable))
+                    return;
+
+                if (!silentIfUnreadable)
+                    LastInventoryScanStatus = "雇员切换过快，本次扫描已丢弃。";
+                return;
+            }
+
             if (!snapshot.IsReadable)
             {
                 if (RetainerInventoryWatcher.ScheduleRetry(reason, silentIfUnreadable))
@@ -222,11 +240,101 @@ namespace Main
             }
 
             RetainerInventoryWatcher.MarkScanCompleted();
-            OwnedItems.ReplaceRetainerSnapshot(characterId, snapshot.RetainerId, snapshot.RetainerName, snapshot.Records);
-            Ownership.Refresh();
-
             LastInventoryScanAt = DateTimeOffset.Now;
-            LastInventoryScanStatus = $"{reason} {snapshot.RetainerName}: 已扫描 {snapshot.Records.Count} 个装备位置。";
+            this.queuedRetainerSnapshots.Enqueue(new QueuedRetainerSnapshot(characterId, reason, snapshot));
+            this.framesUntilRetainerSnapshotFlush = RetainerSnapshotFlushDelayFrames;
+            LastInventoryScanStatus = $"{reason} {snapshot.RetainerName}: 已读取 {snapshot.Records.Count} 个装备位置，等待队列写入。";
+        }
+
+        private void ProcessRetainerSnapshotQueue()
+        {
+            if (this.queuedRetainerSnapshots.Count > 0)
+            {
+                var queued = this.queuedRetainerSnapshots.Dequeue();
+                if (queued.CharacterId == loadedCharacterId)
+                {
+                    var snapshot = queued.Snapshot;
+                    var changeKind = OwnedItems.ReplaceRetainerSnapshot(
+                        queued.CharacterId,
+                        snapshot.RetainerId,
+                        snapshot.RetainerName,
+                        snapshot.Records,
+                        save: false);
+
+                    this.queuedRetainerOwnershipChanged |= changeKind == OwnedItemSnapshotChangeKind.OwnershipChanged;
+                    this.queuedRetainerLocationsChanged |= changeKind == OwnedItemSnapshotChangeKind.LocationsOnly;
+                    this.queuedRetainerStatusText = changeKind switch
+                    {
+                        OwnedItemSnapshotChangeKind.None => $"{queued.Reason} {snapshot.RetainerName}: 缓存无变化。",
+                        OwnedItemSnapshotChangeKind.LocationsOnly => $"{queued.Reason} {snapshot.RetainerName}: 已更新装备位置。",
+                        _ => $"{queued.Reason} {snapshot.RetainerName}: 已扫描 {snapshot.Records.Count} 个装备位置。",
+                    };
+                }
+
+                if (this.queuedRetainerSnapshots.Count == 0
+                    && !this.queuedRetainerOwnershipChanged
+                    && !this.queuedRetainerLocationsChanged
+                    && !string.IsNullOrWhiteSpace(this.queuedRetainerStatusText))
+                {
+                    LastInventoryScanStatus = this.queuedRetainerStatusText;
+                    this.queuedRetainerStatusText = string.Empty;
+                    this.framesUntilRetainerSnapshotFlush = 0;
+                }
+
+                return;
+            }
+
+            if (!this.queuedRetainerOwnershipChanged && !this.queuedRetainerLocationsChanged)
+                return;
+
+            if (this.framesUntilRetainerSnapshotFlush > 0)
+            {
+                this.framesUntilRetainerSnapshotFlush--;
+                return;
+            }
+
+            CommitRetainerSnapshotChanges();
+        }
+
+        private void FlushRetainerSnapshotQueue()
+        {
+            while (this.queuedRetainerSnapshots.Count > 0)
+            {
+                var queued = this.queuedRetainerSnapshots.Dequeue();
+                if (queued.CharacterId != loadedCharacterId)
+                    continue;
+
+                var snapshot = queued.Snapshot;
+                var changeKind = OwnedItems.ReplaceRetainerSnapshot(
+                    queued.CharacterId,
+                    snapshot.RetainerId,
+                    snapshot.RetainerName,
+                    snapshot.Records,
+                    save: false);
+                this.queuedRetainerOwnershipChanged |= changeKind == OwnedItemSnapshotChangeKind.OwnershipChanged;
+                this.queuedRetainerLocationsChanged |= changeKind == OwnedItemSnapshotChangeKind.LocationsOnly;
+            }
+
+            CommitRetainerSnapshotChanges();
+        }
+
+        private void CommitRetainerSnapshotChanges()
+        {
+            if (!this.queuedRetainerOwnershipChanged && !this.queuedRetainerLocationsChanged)
+                return;
+
+            OwnedItems.Save();
+            if (this.queuedRetainerOwnershipChanged)
+                Ownership.Refresh();
+            else
+                Ownership.RefreshOwnedLocations();
+
+            this.queuedRetainerOwnershipChanged = false;
+            this.queuedRetainerLocationsChanged = false;
+            this.framesUntilRetainerSnapshotFlush = 0;
+            if (!string.IsNullOrWhiteSpace(this.queuedRetainerStatusText))
+                LastInventoryScanStatus = this.queuedRetainerStatusText;
+            this.queuedRetainerStatusText = string.Empty;
         }
 
         private void ScanSaddlebagInventory(string reason = "陆行鸟背包扫描。")
@@ -436,6 +544,7 @@ namespace Main
         //退出方法
         public void Dispose()
         {
+            FlushRetainerSnapshotQueue();
             //保存配置
             Configuration.Save();
             //移除窗口监听

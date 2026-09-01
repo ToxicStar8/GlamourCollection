@@ -18,81 +18,88 @@ public unsafe sealed class RetainerInventoryWatcher : IDisposable
         "InventoryRetainerLarge",
     ];
 
-    private static readonly string[] RetainerMenuAddons =
-    [
-        "SelectString",
-    ];
-
     private const int ScanDelayFrames = 2;
-    private const int SpeculativeScanDelayFrames = 8;
-    private const int InventoryChangeScanDelayFrames = 1;
+    private const int InventoryChangeScanDelayFrames = 15;
     private const int RetryDelayFrames = 8;
     private const int MaxScanAttempts = 20;
 
-    private int framesUntilScan;
-    private int remainingRetryAttempts;
-    private bool pendingScanIsSpeculative;
-    private string pendingScanReason = string.Empty;
+    private readonly Dictionary<ulong, PendingRetainerScan> pendingScans = [];
+    private readonly Dictionary<ulong, int> remainingRetryAttempts = [];
+    private ulong observedRetainerId;
 
     public string LastScanReason { get; private set; } = string.Empty;
     public bool LastScanWasSpeculative { get; private set; }
+    public ulong LastScanRetainerId { get; private set; }
 
     public RetainerInventoryWatcher()
     {
         Svc.AddonLifecycle.RegisterListener(AddonEvent.PostOpen, RetainerInventoryAddons, OnRetainerInventoryAddon);
-        Svc.AddonLifecycle.RegisterListener(AddonEvent.PostRefresh, RetainerInventoryAddons, OnRetainerInventoryAddon);
-        Svc.AddonLifecycle.RegisterListener(AddonEvent.PostOpen, RetainerMenuAddons, OnRetainerMenuAddon);
-        Svc.AddonLifecycle.RegisterListener(AddonEvent.PostRefresh, RetainerMenuAddons, OnRetainerMenuAddon);
         Svc.GameInventory.InventoryChangedRaw += OnInventoryChangedRaw;
+    }
+
+    public void UpdateActiveRetainer()
+    {
+        var activeRetainerId = Svc.ClientState.IsLoggedIn ? GetActiveRetainerId() : 0;
+        if (activeRetainerId == this.observedRetainerId)
+            return;
+
+        this.observedRetainerId = activeRetainerId;
+        if (activeRetainerId == 0)
+            return;
+
+        this.remainingRetryAttempts[activeRetainerId] = MaxScanAttempts - 1;
+        this.ScheduleScan(ScanDelayFrames, "雇员切换后扫描。", true, activeRetainerId);
     }
 
     public bool ConsumeScanRequest()
     {
-        if (this.framesUntilScan <= 0)
+        if (this.observedRetainerId == 0
+            || !this.pendingScans.TryGetValue(this.observedRetainerId, out var pendingScan))
             return false;
 
-        this.framesUntilScan--;
-        if (this.framesUntilScan > 0)
+        pendingScan.FramesUntilScan--;
+        if (pendingScan.FramesUntilScan > 0)
             return false;
 
-        this.LastScanReason = this.pendingScanReason;
-        this.LastScanWasSpeculative = this.pendingScanIsSpeculative;
-        this.pendingScanReason = string.Empty;
-        this.pendingScanIsSpeculative = false;
+        this.pendingScans.Remove(this.observedRetainerId);
+        this.LastScanReason = pendingScan.Reason;
+        this.LastScanWasSpeculative = pendingScan.IsSpeculative;
+        this.LastScanRetainerId = this.observedRetainerId;
         return true;
     }
 
     public bool ScheduleRetry(string reason, bool isSpeculative)
     {
-        if (this.remainingRetryAttempts <= 0)
+        var retainerId = this.LastScanRetainerId;
+        if (retainerId == 0
+            || !this.remainingRetryAttempts.TryGetValue(retainerId, out var remainingAttempts)
+            || remainingAttempts <= 0)
             return false;
 
-        this.remainingRetryAttempts--;
-        this.ScheduleScan(RetryDelayFrames, reason, isSpeculative);
+        this.remainingRetryAttempts[retainerId] = remainingAttempts - 1;
+        this.ScheduleScan(RetryDelayFrames, reason, isSpeculative, retainerId);
         return true;
     }
 
     public void MarkScanCompleted()
     {
-        this.remainingRetryAttempts = 0;
+        if (this.LastScanRetainerId != 0)
+            this.remainingRetryAttempts.Remove(this.LastScanRetainerId);
     }
 
     public void ClearPending()
     {
-        this.framesUntilScan = 0;
-        this.remainingRetryAttempts = 0;
+        this.pendingScans.Clear();
+        this.remainingRetryAttempts.Clear();
         this.LastScanReason = string.Empty;
         this.LastScanWasSpeculative = false;
-        this.pendingScanReason = string.Empty;
-        this.pendingScanIsSpeculative = false;
+        this.LastScanRetainerId = 0;
+        this.observedRetainerId = 0;
     }
 
     public void Dispose()
     {
         Svc.AddonLifecycle.UnregisterListener(AddonEvent.PostOpen, RetainerInventoryAddons, OnRetainerInventoryAddon);
-        Svc.AddonLifecycle.UnregisterListener(AddonEvent.PostRefresh, RetainerInventoryAddons, OnRetainerInventoryAddon);
-        Svc.AddonLifecycle.UnregisterListener(AddonEvent.PostOpen, RetainerMenuAddons, OnRetainerMenuAddon);
-        Svc.AddonLifecycle.UnregisterListener(AddonEvent.PostRefresh, RetainerMenuAddons, OnRetainerMenuAddon);
         Svc.GameInventory.InventoryChangedRaw -= OnInventoryChangedRaw;
     }
 
@@ -101,39 +108,48 @@ public unsafe sealed class RetainerInventoryWatcher : IDisposable
         if (!Svc.ClientState.IsLoggedIn)
             return;
 
-        this.remainingRetryAttempts = MaxScanAttempts - 1;
-        this.ScheduleScan(ScanDelayFrames, "雇员库存扫描。", false);
-    }
-
-    private void OnRetainerMenuAddon(AddonEvent type, AddonArgs args)
-    {
-        if (!Svc.ClientState.IsLoggedIn || !HasActiveRetainer())
+        var activeRetainerId = GetActiveRetainerId();
+        if (activeRetainerId == 0)
             return;
 
-        this.remainingRetryAttempts = MaxScanAttempts - 1;
-        this.ScheduleScan(SpeculativeScanDelayFrames, "雇员选择后扫描。", true);
+        this.remainingRetryAttempts[activeRetainerId] = MaxScanAttempts - 1;
+        this.ScheduleScan(ScanDelayFrames, "雇员库存扫描。", false, activeRetainerId);
     }
 
     private void OnInventoryChangedRaw(IReadOnlyCollection<InventoryEventArgs> events)
     {
-        if (!Svc.ClientState.IsLoggedIn || events.Count == 0 || !events.Any(IsRetainerEvent))
+        var activeRetainerId = GetActiveRetainerId();
+        if (!Svc.ClientState.IsLoggedIn
+            || activeRetainerId == 0
+            || events.Count == 0
+            || !events.Any(IsRetainerEvent))
             return;
 
-        this.remainingRetryAttempts = MaxScanAttempts - 1;
-        this.ScheduleScan(InventoryChangeScanDelayFrames, "雇员库存变化扫描。", false);
+        this.remainingRetryAttempts[activeRetainerId] = MaxScanAttempts - 1;
+        this.ScheduleScan(InventoryChangeScanDelayFrames, "雇员库存变化扫描。", false, activeRetainerId);
     }
 
-    private void ScheduleScan(int delayFrames, string reason, bool isSpeculative)
+    private void ScheduleScan(int delayFrames, string reason, bool isSpeculative, ulong retainerId)
     {
-        this.framesUntilScan = delayFrames;
-        this.pendingScanReason = reason;
-        this.pendingScanIsSpeculative = isSpeculative;
+        if (retainerId == 0)
+            return;
+
+        if (this.pendingScans.TryGetValue(retainerId, out var pendingScan))
+        {
+            pendingScan.FramesUntilScan = delayFrames;
+            pendingScan.Reason = reason;
+            pendingScan.IsSpeculative = isSpeculative;
+            return;
+        }
+
+        this.pendingScans[retainerId] = new PendingRetainerScan(delayFrames, reason, isSpeculative);
     }
 
-    private static bool HasActiveRetainer()
+    private static ulong GetActiveRetainerId()
     {
         var manager = RetainerManager.Instance();
-        return manager != null && manager->GetActiveRetainer() != null;
+        var activeRetainer = manager == null ? null : manager->GetActiveRetainer();
+        return activeRetainer == null ? 0 : activeRetainer->RetainerId;
     }
 
     private static bool IsRetainerEvent(InventoryEventArgs args)
@@ -152,5 +168,12 @@ public unsafe sealed class RetainerInventoryWatcher : IDisposable
         }
 
         return false;
+    }
+
+    private sealed class PendingRetainerScan(int framesUntilScan, string reason, bool isSpeculative)
+    {
+        public int FramesUntilScan { get; set; } = framesUntilScan;
+        public string Reason { get; set; } = reason;
+        public bool IsSpeculative { get; set; } = isSpeculative;
     }
 }

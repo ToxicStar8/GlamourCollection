@@ -47,5 +47,16 @@ namespace Main
 
         private bool scanWhenCharacterReady;
         private ulong loadedCharacterId;
+        private const int RetainerSnapshotFlushDelayFrames = 15;
+        private readonly Queue<QueuedRetainerSnapshot> queuedRetainerSnapshots = [];
+        private int framesUntilRetainerSnapshotFlush;
+        private bool queuedRetainerOwnershipChanged;
+        private bool queuedRetainerLocationsChanged;
+        private string queuedRetainerStatusText = string.Empty;
+
+        private sealed record QueuedRetainerSnapshot(
+            ulong CharacterId,
+            string Reason,
+            RetainerInventorySnapshot Snapshot);
     }
 }
